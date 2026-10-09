@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Simulador Battle Royale</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Mono:wght@500;600&family=Public+Sans:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+
+<header class="top">
+  <div>
+    <h1>Simulador Battle Royale</h1>
+    <p class="sub">Personajes, objetos y eventos conectados por reglas lógicas.</p>
+  </div>
+  <div class="save" id="save"></div>
+</header>
+
+<nav class="tabs" id="tabs" aria-label="Secciones"></nav>
+<main id="app"><p class="empty">Cargando…</p></main>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+
+<!-- El orden importa: cada archivo usa lo que definen los anteriores. -->
+<script src="js/nucleo.js"></script>
+<script src="js/almacen.js"></script>
+<script src="js/interfaz.js"></script>
+<script src="js/inicio.js"></script>
+</body>
+</html>
