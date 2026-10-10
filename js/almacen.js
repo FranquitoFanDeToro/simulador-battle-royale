@@ -66,11 +66,19 @@ async function gcBlobs(){
   if(!STORE.ok) return;
   try{
     const used=new Set();
-    P.chars.forEach(c=>c.imgs.forEach(i=>{if(i.kind==='file')used.add(i.id);}));
+    allImages(P).forEach(i=>{if(i.kind==='file')used.add(i.id);});
     for(const k of await dbKeys('blobs')){
       if(!used.has(k)){await dbDel('blobs',k);if(BLOBURL[k]){URL.revokeObjectURL(BLOBURL[k]);delete BLOBURL[k];}}
     }
   }catch(e){}
+}
+/* Todas las imágenes del proyecto: las de los personajes y las de los íconos de objetos y habilidades. */
+function allImages(p){
+  const out=[];
+  p.chars.forEach(c=>c.imgs.forEach(i=>out.push(i)));
+  p.items.forEach(i=>{if(i.img)out.push(i.img);});
+  p.skills.forEach(i=>{if(i.img)out.push(i.img);});
+  return out;
 }
 function imgSrc(im){return im.kind==='file'?(BLOBURL[im.id]||''):im.src;}
 /* Imagen de un personaje. Con etiqueta busca una que la tenga; si no hay, usa la principal (la primera). */
@@ -123,12 +131,10 @@ function blobToDataURL(b){
 async function buildExport(){
   const o=JSON.parse(JSON.stringify(P));
   o._blobs={};
-  for(const c of o.chars){
-    for(const im of c.imgs){
-      if(im.kind==='file'&&BLOBURL[im.id]){
-        const b=await (await fetch(BLOBURL[im.id])).blob();
-        o._blobs[im.id]=await blobToDataURL(b);
-      }
+  for(const im of allImages(o)){
+    if(im.kind==='file'&&BLOBURL[im.id]){
+      const b=await (await fetch(BLOBURL[im.id])).blob();
+      o._blobs[im.id]=await blobToDataURL(b);
     }
   }
   return JSON.stringify(o);
@@ -139,17 +145,18 @@ async function importProjectText(text){
   const p=normalize(obj);
   if(!p||!(p.chars.length||p.events.length||p.items.length||p.skills.length||p.stats.length)) throw new Error('vacío');
   const bl=(obj&&obj._blobs&&typeof obj._blobs==='object')?obj._blobs:{};
-  for(const c of p.chars){
-    for(const im of c.imgs){
-      if(im.kind!=='file') continue;
-      const du=bl[im.id];
-      if(typeof du==='string'&&du.indexOf('data:')===0){
-        const b=await (await fetch(du)).blob();
-        if(STORE.ok) await dbPut('blobs',im.id,b);
-        BLOBURL[im.id]=URL.createObjectURL(b);
-      }
+  for(const im of allImages(p)){
+    if(im.kind!=='file') continue;
+    const du=bl[im.id];
+    if(typeof du==='string'&&du.indexOf('data:')===0){
+      const b=await (await fetch(du)).blob();
+      if(STORE.ok) await dbPut('blobs',im.id,b);
+      BLOBURL[im.id]=URL.createObjectURL(b);
     }
-    c.imgs=c.imgs.filter(im=>im.kind!=='file'||BLOBURL[im.id]);
   }
+  const has=im=>im.kind!=='file'||!!BLOBURL[im.id];
+  p.chars.forEach(c=>{c.imgs=c.imgs.filter(has);});
+  p.items.forEach(i=>{if(i.img&&!has(i.img))i.img=null;});
+  p.skills.forEach(i=>{if(i.img&&!has(i.img))i.img=null;});
   return p;
 }

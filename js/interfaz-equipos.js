@@ -8,7 +8,7 @@
 const curTeam=()=>P.teams.find(t=>t.id===ui.team);
 function teamsFiltered(){
   const q=norm(ui.q.teams);
-  return P.teams.filter(t=>!q||norm(t.name).includes(q));
+  return viewOf(P.teams.filter(t=>!q||norm(t.name).includes(q)),'teams');
 }
 function teamCard(t){
   const mem=t.members.map(id=>P.chars.find(c=>c.id===id)).filter(Boolean);
@@ -52,7 +52,7 @@ function vTeams(){
   if(ui.team){const t=curTeam();if(t)return vTeamForm(t);ui.team=null;}
   return `<div class="bar"><h2 class="h2">Equipos</h2><div class="acts"><button type="button" class="btn pri" data-act="team-new">Nuevo equipo</button></div></div>
   <p class="hint" style="margin-bottom:12px">Estos equipos existen desde el primer día. Los eventos pueden formar otros durante la partida (con nombres preestablecidos o generados con las palabras de más abajo), sumar o sacar miembros, y hacer que se traicionen según su lealtad.</p>
-  <div class="fbar"><input type="search" placeholder="Buscar equipos…" value="${esc(ui.q.teams)}" data-bind="q" data-k="teams" aria-label="Buscar equipos"><span class="hint" id="count">${countText('teams')}</span></div>
+  <div class="fbar"><input type="search" placeholder="Buscar equipos…" value="${esc(ui.q.teams)}" data-bind="q" data-k="teams" aria-label="Buscar equipos">${sortBarHTML('teams')}<span class="hint" id="count">${countText('teams')}</span></div>
   <div id="list">${teamsListHTML()}</div>
   ${wordsSection()}`;
 }

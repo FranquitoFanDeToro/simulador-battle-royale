@@ -31,7 +31,8 @@ const FX_CAT={
   stat:'stat',
   emotion:'emo',emotionClear:'emo',
   loyalty:'team',teamForm:'team',teamJoin:'team',teamLeave:'team',teamShare:'team',
-  addState:'state',removeState:'state',clearStates:'state'
+  addState:'state',removeState:'state',clearStates:'state',
+  moveItem:'item',swapItems:'item',killTeam:'kill',teamFight:'kill'
 };
 const CAT_LBL={char:'Personaje',item:'Objetos',skill:'Habilidades',stat:'Stats',emo:'Emociones',state:'Estados alterados',team:'Equipos y lealtad',kill:'Eliminar'};
 const CAT_ORDER=['char','item','skill','stat','emo','state','team'];

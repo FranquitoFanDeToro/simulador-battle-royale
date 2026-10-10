@@ -4,10 +4,10 @@
    No toca la pantalla. Todo lo que el usuario crea vive en el objeto P:
 
    P = {
-     v: 4,
-     stats:    [{id, name, def}]                     catálogo de stats
-     items:    [{id, name, size, cat}]               objetos (size = espacio que ocupan)
-     skills:   [{id, name, cat}]                     habilidades
+     v: 5,
+     stats:    [{id, name, def, min, max}]           catálogo de stats (min/max: límite propio; null = sin límite)
+     items:    [{id, name, size, cat, icon, img}]    objetos (size = espacio; icon = emoji; img = imagen opcional)
+     skills:   [{id, name, cat, icon, img}]          habilidades
      emotions: [{id, name, icon, days}]              emociones (days: se pasa sola; 0 = no)
      states:   [{id, name, icon, days, canAct, text,  estados alterados (quemadura, veneno…)
                  mods:[{stat, mode:'add'|'mult', num}],     cambian stats mientras dura
@@ -21,7 +21,9 @@
      teamPresets: [texto]                            nombres de equipo preestablecidos
      events:   [{id, text, weight, roles:[{n, req, look}],
                  cond:{...árbol de reglas...}, fx:[efectos],
-                 chance:{mode, pct, stat}, failText, fxFail:[efectos]}]
+                 chance:{mode, pct, stat}, failText, fxFail:[efectos],
+                 vars:[{n:'Objeto1', kind:'item'|'skill'|'state'|'team',   elementos que el evento elige solo:
+                        src:'of'|'any', role, lacks, cat}]}]              «un objeto de Y que X no tenga», «un equipo cualquiera»…
    }
    ===================================================================== */
 
@@ -51,9 +53,24 @@ const FX={
   teamTake:{label:'Toma del equipo el objeto',ref:'items',prep:'para'},
   addState:{label:'Aplica el estado',ref:'states',prep:'a'},
   removeState:{label:'Quita el estado',ref:'states',prep:'de'},
-  clearStates:{label:'Quita todos los estados',ref:null,prep:'de'}
+  clearStates:{label:'Quita todos los estados',ref:null,prep:'de'},
+  moveItem:{label:'Pasa un objeto',ref:'items',prep:''},
+  swapItems:{label:'Intercambia objetos',ref:'items',prep:''},
+  killTeam:{label:'Elimina a todo un equipo',ref:'@team',prep:''},
+  teamFight:{label:'Dos equipos pelean hasta la muerte',ref:'@team',prep:''}
 };
-const TEAM_FX=['teamForm','teamJoin'];     // efectos que necesitan un segundo participante (campo «by»)
+/* Elementos de un evento: cosas que el evento elige solo al ocurrir y a las que puede referirse
+   en el texto ({Objeto1}) y en los efectos. */
+const VAR_KINDS={item:{pre:'Objeto',lbl:'Objeto'},skill:{pre:'Habilidad',lbl:'Habilidad'},state:{pre:'Estado',lbl:'Estado alterado'},team:{pre:'Equipo',lbl:'Equipo'}};
+const MAX_VARS=6;
+const VAR_NAME_RE=/^[A-Za-zÁÉÍÓÚÑáéíóúñ]+\d+$/;
+const TOKEN_RE=/\{([A-Z]|[A-Za-zÁÉÍÓÚÑáéíóúñ]+\d+)\}/g;
+function nextVarName(list,kind){
+  const pre=VAR_KINDS[kind].pre;let k=1;
+  while(list.some(v=>v.n===pre+k)) k++;
+  return pre+k;
+}
+const TEAM_FX=['teamForm','teamJoin','moveItem','swapItems'];     // efectos que necesitan un segundo participante (campo «by»)
 const CHANCE_MODES=['always','fixed','stat','team','loyalty'];
 const CHANCE_LBL={
   always:'Siempre ocurre tal cual',
@@ -80,16 +97,16 @@ function sampleProject(){
   const A={qu:'sa_quemado',ve:'sa_veneno',at:'sa_aturdido'};   // estados alterados
   const C=(name,gender,items,skills,stats,loy)=>({id:uid(),name,gender,enabled:true,slots:4,imgs:[],items:items||[],skills:skills||[],stats:stats||{},loy:loy==null?50:loy,emotion:'',states:[]});
   const rl=(n,req)=>({n:n,req:req||'alive',look:''});
-  const FXD=f=>Object.assign({k:'kill',role:'X',ref:'',by:'',mode:'add',num:1,nm:'any'},f);
+  const FXD=f=>Object.assign({k:'kill',role:'X',ref:'',ref2:'',by:'',mode:'add',num:1,nm:'any'},f);
   const E=(text,weight,roles,cond,fx,extra)=>Object.assign({
     id:uid(),text,weight,roles,cond:cond||emptyCond(),fx:(fx||[]).map(FXD),
-    chance:{mode:'always',pct:50,stat:''},failText:'',fxFail:[]
+    chance:{mode:'always',pct:50,stat:''},failText:'',fxFail:[],vars:[]
   },extra||{},{fxFail:((extra&&extra.fxFail)||[]).map(FXD)});
   const X=rl('X'), Y=rl('Y');
   const NM=()=>R('X','sameteam','',true,{role2:'Y'});      // «X no es del mismo equipo que Y»
   const MATES=()=>R('X','sameteam','',false,{role2:'Y'});  // «X es del mismo equipo que Y»
   const proj={
-    v:4,
+    v:5,
     fallback:'{X} pasó el día sin novedades.',
     emotions:[
       {id:M.mi,name:'Miedo',icon:'😨',days:2},
@@ -119,16 +136,16 @@ function sampleProject(){
       ]
     },
     teamPresets:['Alianza del Norte','Los Supervivientes'],
-    stats:[{id:T.fu,name:'Fuerza',def:5},{id:T.ag,name:'Agilidad',def:5},{id:T.ing,name:'Ingenio',def:5}],
+    stats:[{id:T.fu,name:'Fuerza',def:5,min:0,max:10},{id:T.ag,name:'Agilidad',def:5,min:0,max:10},{id:T.ing,name:'Ingenio',def:5,min:0,max:10}],
     items:[
-      {id:I.cu,name:'Cuchillo',size:1,cat:'Armas'},
-      {id:I.ar,name:'Arco',size:2,cat:'Armas'},
-      {id:I.bo,name:'Botiquín',size:1,cat:'Salud'}
+      {id:I.cu,name:'Cuchillo',size:1,cat:'Armas',icon:'🔪',img:null},
+      {id:I.ar,name:'Arco',size:2,cat:'Armas',icon:'🏹',img:null},
+      {id:I.bo,name:'Botiquín',size:1,cat:'Salud',icon:'🩹',img:null}
     ],
     skills:[
-      {id:K.si,name:'Sigilo',cat:'Movimiento'},
-      {id:K.pu,name:'Puntería',cat:'Combate'},
-      {id:K.au,name:'Primeros auxilios',cat:'Salud'}
+      {id:K.si,name:'Sigilo',cat:'Movimiento',icon:'🥷',img:null},
+      {id:K.pu,name:'Puntería',cat:'Combate',icon:'🎯',img:null},
+      {id:K.au,name:'Primeros auxilios',cat:'Salud',icon:'⛑️',img:null}
     ],
     chars:[
       C('Valeria','f',[],[],{[T.fu]:4,[T.ag]:7}),
@@ -186,6 +203,25 @@ function sampleProject(){
   /* un evento solo para un personaje: la regla «es el personaje» */
   const vale=proj.chars.find(c=>c.name==='Valeria');
   proj.events.push(E('{X} sintió que alguien la observaba entre los árboles.',3,[X],G('and',R('X','is',vale.id)),[{k:'emotion',role:'X',ref:M.mi}]));
+  /* eventos con elementos: el evento elige solo qué objeto, habilidad, estado o equipo es {Objeto1}, {Equipo1}… */
+  const V=(n,kind,src,role,lacks)=>({n,kind,src,role:role||'X',lacks:lacks||'',cat:''});
+  proj.events.push(
+    E('{X} intercambió {Objeto1} por {Objeto2} de {Y}.',2,[X,Y],emptyCond(),
+      [{k:'swapItems',role:'X',by:'Y',ref:'@Objeto1',ref2:'@Objeto2'}],
+      {vars:[V('Objeto1','item','of','X','Y'),V('Objeto2','item','of','Y','X')]}),
+    E('{X} le regaló {Objeto1} a {Y}.',2,[X,Y],G('and',MATES()),
+      [{k:'moveItem',role:'X',by:'Y',ref:'@Objeto1'},{k:'loyalty',role:'Y',mode:'add',num:8}],
+      {vars:[V('Objeto1','item','of','X','Y')]}),
+    E('{X} copió la habilidad {Habilidad1} de {Y}.',2,[X,Y],emptyCond(),
+      [{k:'giveSkill',role:'X',ref:'@Habilidad1'}],
+      {vars:[V('Habilidad1','skill','of','Y','X')]}),
+    E('{X} bebió una sopa extraña y quedó con el estado {Estado1}.',1,[X],emptyCond(),
+      [{k:'addState',role:'X',ref:'@Estado1'}],
+      {vars:[V('Estado1','state','any')]}),
+    E('{Equipo1} y {Equipo2} pelearon hasta la muerte.',1,[X],G('and',R('X','inteam')),
+      [{k:'teamFight',role:'X',ref:'@Equipo1',ref2:'@Equipo2'}],
+      {vars:[V('Equipo1','team','of','X'),V('Equipo2','team','any')]})
+  );
   proj.teams=[{id:'tm_lobos',name:'Los Lobos',leader:mateo.id,members:[mateo.id,joaquin.id],share:false}];
   return proj;
 }
@@ -217,13 +253,31 @@ function normalize(p){
   const arr=a=>Array.isArray(a)?a:[];
   const num=(v,d)=>{v=parseFloat(v);return isFinite(v)?v:d;};
   const normFx=l=>arr(l).filter(f=>f&&FX[f.k]).map(f=>({
-    k:f.k,role:String(f.role||'X'),ref:f.ref?String(f.ref):'',by:String(f.by||''),
+    k:f.k,role:String(f.role||'X'),ref:f.ref?String(f.ref):'',ref2:f.ref2?String(f.ref2):'',by:String(f.by||''),
     mode:f.mode==='set'?'set':'add',num:num(f.num,1),nm:['gen','preset','any'].includes(f.nm)?f.nm:'any'
   }));
-  const o={v:4,stats:[],items:[],skills:[],emotions:[],states:[],chars:[],teams:[],words:{nouns:[],adjs:[]},teamPresets:[],events:[],fallback:'{X} pasó el día sin novedades.'};
-  o.stats=arr(p.stats).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),def:num(i.def,5)}));
-  o.items=arr(p.items).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),size:Math.max(0,Math.floor(num(i.size,1))),cat:String(i.cat||'')}));
-  o.skills=arr(p.skills).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),cat:String(i.cat||'')}));
+  const normVars=l=>{
+    const out=[];
+    arr(l).forEach(v=>{
+      if(!v||!VAR_KINDS[v.kind]||out.length>=MAX_VARS) return;
+      let n=String(v.n||'');
+      if(!VAR_NAME_RE.test(n)||out.some(x=>x.n===n)) n=nextVarName(out,v.kind);
+      out.push({n,kind:v.kind,src:v.src==='any'?'any':'of',role:ROLE_NAMES.includes(v.role)?v.role:'X',
+        lacks:ROLE_NAMES.includes(v.lacks)?v.lacks:'',cat:(v.kind==='item'||v.kind==='skill')?String(v.cat||''):''});
+    });
+    return out;
+  };
+  const o={v:5,stats:[],items:[],skills:[],emotions:[],states:[],chars:[],teams:[],words:{nouns:[],adjs:[]},teamPresets:[],events:[],fallback:'{X} pasó el día sin novedades.'};
+  const lim=v=>(v===null||v===undefined||v===''||!isFinite(parseFloat(v)))?null:parseFloat(v);
+  const normImg=m=>(m&&m.id&&['file','url','data'].includes(m.kind)&&(m.kind==='file'||safeUrl(m.src)))?{id:String(m.id),kind:m.kind,src:m.kind==='file'?'':String(m.src),tag:''}:null;
+  o.stats=arr(p.stats).filter(i=>i&&i.id).map(i=>{
+    let mn=lim(i.min),mx=lim(i.max);
+    if(mn!=null&&mx!=null&&mn>mx){const t=mn;mn=mx;mx=t;}
+    let d=num(i.def,5);if(mn!=null&&d<mn)d=mn;if(mx!=null&&d>mx)d=mx;
+    return {id:String(i.id),name:String(i.name||''),def:d,min:mn,max:mx};
+  });
+  o.items=arr(p.items).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),size:Math.max(0,Math.floor(num(i.size,1))),cat:String(i.cat||''),icon:String(i.icon||'').slice(0,8),img:normImg(i.img)}));
+  o.skills=arr(p.skills).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),cat:String(i.cat||''),icon:String(i.icon||'').slice(0,8),img:normImg(i.img)}));
   o.emotions=arr(p.emotions).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),icon:String(i.icon||'').slice(0,8),days:Math.max(0,Math.floor(num(i.days,0)))}));
   o.states=arr(p.states).filter(i=>i&&i.id).map(i=>({
     id:String(i.id),name:String(i.name||''),icon:String(i.icon||'').slice(0,8),days:Math.max(0,Math.floor(num(i.days,0))),
@@ -239,7 +293,13 @@ function normalize(p){
     if(!imgs.length&&typeof c.img==='string'&&c.img.indexOf('data:image/')===0) imgs=[{id:uid(),kind:'data',src:c.img,tag:''}];
     const stats={};
     if(c.stats&&typeof c.stats==='object'&&!Array.isArray(c.stats)){
-      Object.keys(c.stats).forEach(k=>{const v=parseFloat(c.stats[k]);if(isFinite(v))stats[k]=v;});
+      Object.keys(c.stats).forEach(k=>{
+        let v=parseFloat(c.stats[k]);
+        if(!isFinite(v)) return;
+        const sd=o.stats.find(x=>x.id===k);
+        if(sd){if(sd.min!=null&&v<sd.min)v=sd.min;if(sd.max!=null&&v>sd.max)v=sd.max;}
+        stats[k]=v;
+      });
     }
     return {
       id:String(c.id),name:String(c.name||''),gender:GEN[c.gender]?c.gender:'o',enabled:c.enabled!==false,
@@ -275,7 +335,8 @@ function normalize(p){
         pct:Math.min(100,Math.max(0,num(ch.pct,50))),stat:String(ch.stat||'')
       },
       failText:String(e.failText||''),
-      fxFail:normFx(e.fxFail)
+      fxFail:normFx(e.fxFail),
+      vars:normVars(e.vars)
     };
   });
   if(typeof p.fallback==='string'&&p.fallback.trim()) o.fallback=p.fallback;
@@ -297,10 +358,19 @@ function effStat(ch,id){
     const def=stateDef(typeof x==='string'?x:x.id);
     if(def) def.mods.forEach(m=>{if(m.stat===id){hit=true;if(m.mode==='mult')mul*=m.num;else add+=m.num;}});
   });
-  return hit?Math.max(0,(base+add)*mul):base;
+  if(!hit) return base;
+  const s=statDef(id),lo=s&&s.min!=null?s.min:0,v=(base+add)*mul;
+  return Math.min(s&&s.max!=null?s.max:Infinity,Math.max(lo,v));
 }
 const statVal=(ch,id)=>hasStat(ch,id)?effStat(ch,id):0;   // una stat que no se tiene vale 0
 const stateDef=id=>P.states.find(s=>s.id===id)||null;
+/* Límites propios de cada stat (null = sin límite). */
+const statDef=id=>P.stats.find(s=>s.id===id)||null;
+function clampStat(id,v){
+  const s=statDef(id);
+  if(s){if(s.min!=null&&v<s.min)v=s.min;if(s.max!=null&&v>s.max)v=s.max;}
+  return v;
+}
 const stateName=id=>{const s=stateDef(id);return s?(s.name||'Sin nombre'):'';};
 const hasState=(ch,id)=>!!id&&(ch.states||[]).some(x=>(typeof x==='string'?x:x.id)===id);
 function cmp(a,op,b){
@@ -373,6 +443,43 @@ function newSim(){
   return sim;
 }
 
+const nameLbl=(o)=>(o.icon?o.icon+' ':'')+(o.name||'Sin nombre');
+function varLabel(kind,id,sim){
+  if(kind==='team'){const t=sim&&sim.teams.find(x=>x.id===id);return t?t.name:'';}
+  const L={item:P.items,skill:P.skills,state:P.states}[kind],o=L&&L.find(x=>x.id===id);
+  return o?nameLbl(o):'';
+}
+/* Elige al azar los elementos del evento para una asignación de personajes.
+   Devuelve {nombre:{kind,id,label}} o null si alguno no se puede elegir (el evento no puede ocurrir así). */
+function resolveVars(e,as,sim){
+  const vs={};
+  if(!e.vars||!e.vars.length) return vs;
+  const chosen={item:new Set(),skill:new Set(),state:new Set(),team:new Set()};
+  for(const v of e.vars){
+    let pool;
+    const holder=as[v.role];
+    if(v.kind==='team'){
+      if(v.src==='of'){const t=holder?teamOfIn(sim,holder):null;pool=t?[t.id]:[];}
+      else pool=sim.teams.filter(t=>teamMatesIn(sim,t).some(c=>c.alive)).map(t=>t.id);
+    } else {
+      if(v.src==='of'){
+        if(!holder) return null;
+        pool=v.kind==='item'?[...holder.items]:(v.kind==='skill'?[...holder.skills]:holder.states.map(x=>x.id));
+      } else {
+        const L={item:P.items,skill:P.skills,state:P.states}[v.kind];
+        pool=L.filter(i=>!v.cat||v.kind==='state'||(i.cat||'')===v.cat).map(i=>i.id);
+      }
+      const lk=v.lacks?as[v.lacks]:null;
+      if(lk) pool=pool.filter(id=>v.kind==='item'?(!lk.items.has(id)&&slotsFree(lk)>=sizeOf(id)):(v.kind==='skill'?!lk.skills.has(id):!hasState(lk,id)));
+    }
+    pool=pool.filter(id=>!chosen[v.kind].has(id)&&varLabel(v.kind,id,sim));
+    if(!pool.length) return null;
+    const id=pool[Math.floor(Math.random()*pool.length)];
+    chosen[v.kind].add(id);
+    vs[v.n]={kind:v.kind,id,label:varLabel(v.kind,id,sim)};
+  }
+  return vs;
+}
 function pickAssignment(e,actor,sim,used,ignoreCond){
   const roles=e.roles;
   const pools=roles.slice(1).map(r=>{
@@ -387,7 +494,11 @@ function pickAssignment(e,actor,sim,used,ignoreCond){
     for(const c of combo){ if(ids.has(c.id)) return; ids.add(c.id); }
     const as={}; as[roles[0].n]=actor;
     combo.forEach((c,i)=>{as[roles[i+1].n]=c;});
-    if(ignoreCond||evalNode(e.cond,as)) valid.push(as);
+    if(!(ignoreCond||evalNode(e.cond,as))) return;
+    const vs=resolveVars(e,as,sim);              // los elementos del evento (objetos, equipos…) también tienen que existir
+    if(!vs) return;
+    Object.defineProperty(as,'vs',{value:vs,enumerable:false,writable:true});
+    valid.push(as);
   };
   const total=pools.reduce((a,p)=>a*p.length,1);
   if(total<=400){
@@ -399,13 +510,20 @@ function pickAssignment(e,actor,sim,used,ignoreCond){
   return valid.length?valid[Math.floor(Math.random()*valid.length)]:null;
 }
 function fmt(text,as){
-  return esc(text).replace(/\{([A-Z])\}/g,(m,k)=>as[k]?'<b class="nm">'+esc(as[k].name)+'</b>':m);
+  return esc(text).replace(TOKEN_RE,(m,k)=>{
+    if(k.length===1) return as[k]?'<b class="nm">'+esc(as[k].name)+'</b>':m;
+    const v=as.vs&&as.vs[k];
+    return v?'<b class="nm">'+esc(v.label)+'</b>':m;
+  });
 }
 const roleLook=(e,k)=>{const r=e.roles.find(x=>x.n===k);return r?r.look:'';};
 
 /* Aplica una lista de efectos (los de «ocurre» o los de «no sale bien»). */
 function applyFx(list,as,actor,sim,entry){
-  for(const f of list){
+  const vsx=as.vs||{},rr=r=>(r&&r.charAt(0)==='@')?((vsx[r.slice(1)]||{}).id||''):r;
+  for(const f0 of list){
+    /* las referencias a elementos del evento («@Objeto1») se cambian por lo que se eligió */
+    const f=((f0.ref&&f0.ref.charAt(0)==='@')||(f0.ref2&&f0.ref2.charAt(0)==='@'))?Object.assign({},f0,{ref:rr(f0.ref),ref2:rr(f0.ref2)}):f0;
     const t=as[f.role]; if(!t) continue;
     if(f.k==='kill'){
       if(!t.alive) continue;
@@ -463,6 +581,43 @@ function applyFx(list,as,actor,sim,entry){
       if(i>=0){t.states.splice(i,1);entry.notes.push(t.name+' ya no está «'+stateName(f.ref)+'».');}
     } else if(f.k==='clearStates'){
       if(t.states.length){entry.notes.push(t.name+' se libró de '+t.states.map(x=>'«'+stateName(x.id)+'»').join(', ')+'.');t.states=[];}
+    } else if(f.k==='moveItem'){
+      const to=as[f.by],nm=nameOf(P.items,f.ref);
+      if(!to||to===t||!f.ref) continue;
+      if(!t.items.has(f.ref)){entry.notes.push(t.name+' no tiene '+nm+' para pasar.');continue;}
+      if(to.items.has(f.ref)){entry.notes.push(to.name+' ya tenía '+nm+'.');continue;}
+      if(slotsFree(to)<sizeOf(f.ref)){entry.notes.push(to.name+' no tenía espacio para '+nm+'.');continue;}
+      t.items.delete(f.ref);to.items.add(f.ref);
+      entry.notes.push(t.name+' le pasó '+nm+' a '+to.name+'.');
+    } else if(f.k==='swapItems'){
+      const o=as[f.by],A=f.ref,B=f.ref2;
+      if(!o||o===t||!A||!B) continue;
+      const na=nameOf(P.items,A),nb=nameOf(P.items,B);
+      if(A===B||!t.items.has(A)||!o.items.has(B)||t.items.has(B)||o.items.has(A)){entry.notes.push('No se pudo el intercambio de '+na+' por '+nb+'.');continue;}
+      if(slotsFree(t)+sizeOf(A)<sizeOf(B)||slotsFree(o)+sizeOf(B)<sizeOf(A)){entry.notes.push('No se pudo el intercambio de '+na+' por '+nb+': falta espacio.');continue;}
+      t.items.delete(A);o.items.delete(B);t.items.add(B);o.items.add(A);
+      entry.notes.push(t.name+' y '+o.name+' intercambiaron '+na+' por '+nb+'.');
+    } else if(f.k==='killTeam'){
+      const team=sim.teams.find(x=>x.id===f.ref);
+      if(!team){entry.notes.push('No había un equipo para eliminar.');continue;}
+      const by=team.members.includes(actor.id)?'none':'X';
+      entry.notes.push('Todo el equipo «'+team.name+'» quedó fuera.');
+      teamMatesIn(sim,team).filter(c=>c.alive).forEach(m=>applyFx([{k:'kill',role:'L',by:by}],{L:m,X:actor},actor,sim,entry));
+    } else if(f.k==='teamFight'){
+      const A=sim.teams.find(x=>x.id===f.ref),B=sim.teams.find(x=>x.id===f.ref2);
+      if(!A||!B||A===B){entry.notes.push('No hubo pelea de equipos: falta uno de los dos.');continue;}
+      entry.notes.push('«'+A.name+'» y «'+B.name+'» pelean hasta la muerte.');
+      const power=c=>1+Object.keys(c.stats).reduce((a,id)=>a+Math.max(0,statVal(c,id)),0);
+      for(let g=0;g<500;g++){
+        const ta=sim.teams.find(x=>x.id===A.id),tb=sim.teams.find(x=>x.id===B.id);
+        if(!ta||!tb) break;
+        const ma=teamMatesIn(sim,ta).filter(c=>c.alive),mb=teamMatesIn(sim,tb).filter(c=>c.alive);
+        if(!ma.length||!mb.length) break;
+        const a=ma[Math.floor(Math.random()*ma.length)],b=mb[Math.floor(Math.random()*mb.length)];
+        const winA=Math.random()<power(a)/(power(a)+power(b)),w=winA?a:b,l=winA?b:a;
+        applyFx([{k:'kill',role:'L',by:'W'}],{L:l,W:w},actor,sim,entry);
+        entry.notes.push(w.name+' venció a '+l.name+'.');
+      }
     } else if(f.k==='giveItem'&&f.ref){
       if(t.items.has(f.ref)) continue;
       if(slotsFree(t)<sizeOf(f.ref)){entry.notes.push(t.name+' no tenía espacio para '+nameOf(P.items,f.ref)+'.');continue;}
@@ -472,7 +627,9 @@ function applyFx(list,as,actor,sim,entry){
     else if(f.k==='removeSkill'&&f.ref) t.skills.delete(f.ref);
     else if(f.k==='stat'&&f.ref){
       if(!hasStat(t,f.ref)){entry.notes.push(t.name+' no tiene la stat '+nameOf(P.stats,f.ref)+', no cambia.');continue;}
-      t.stats[f.ref]=f.mode==='set'?f.num:t.stats[f.ref]+f.num;
+      const want=f.mode==='set'?f.num:t.stats[f.ref]+f.num,got=clampStat(f.ref,want);
+      t.stats[f.ref]=got;
+      if(got!==want) entry.notes.push(nameOf(P.stats,f.ref)+' de '+t.name+' llegó '+(want>got?'al máximo':'al mínimo')+' ('+round2(got)+').');
     }
   }
 }
@@ -485,7 +642,10 @@ function chaosShake(sim,level){
   sim.chars.filter(c=>c.alive).forEach(c=>{
     if(Math.random()>=p) return;
     n++;
-    Object.keys(c.stats).forEach(id=>{c.stats[id]=Math.floor(Math.random()*(max[id]+1));});
+    Object.keys(c.stats).forEach(id=>{
+      const sd=statDef(id),lo=sd&&sd.min!=null?Math.ceil(sd.min):0,hi=sd&&sd.max!=null?Math.floor(sd.max):max[id];
+      c.stats[id]=hi>=lo?lo+Math.floor(Math.random()*(hi-lo+1)):lo;
+    });
     c.items=new Set();
     shuffle(P.items.slice()).forEach(it=>{if(Math.random()<0.5&&slotsFree(c)>=it.size)c.items.add(it.id);});
     c.skills=new Set(P.skills.filter(()=>Math.random()<0.4).map(s=>s.id));
@@ -542,7 +702,7 @@ function tickStates(sim,entries){
         if(d.k==='kill'){applyFx([{k:'kill',role:'X',by:'none'}],{X:c},c,sim,en);did=died=true;}
         else if(d.k==='stat'){
           if(!d.ref||!hasStat(c,d.ref)) continue;
-          const b=c.stats[d.ref];c.stats[d.ref]=d.mode==='set'?d.num:b+d.num;
+          const b=c.stats[d.ref];c.stats[d.ref]=clampStat(d.ref,d.mode==='set'?d.num:b+d.num);
           en.notes.push(nameOf(P.stats,d.ref)+': '+round2(b)+' → '+round2(c.stats[d.ref])+'.');did=true;
         } else if(d.k==='loyalty'){
           const b=c.loy;c.loy=Math.min(100,Math.max(0,d.mode==='set'?d.num:b+d.num));

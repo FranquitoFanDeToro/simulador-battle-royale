@@ -276,3 +276,19 @@ td .av{vertical-align:middle;margin-right:8px}
 .seg button{min-width:0}
 @media (max-width:640px){.grp-blk .seg button{padding:6px 7px;font-size:11px}}
 @media (max-width:640px){.blk.grp-blk{grid-template-columns:minmax(0,1fr)}}
+
+/* ---------- Etapa 5: íconos, filtros ---------- */
+.two>.av{flex:none;min-width:0}                       /* la foto de la ficha no se estira */
+.ico{display:inline-block;width:1.35em;height:1.35em;object-fit:cover;border-radius:4px;vertical-align:-.3em;margin-right:5px;background:var(--surface-2)}
+span.ico{width:auto;height:auto;background:none;font-size:1.1em;vertical-align:baseline;border-radius:0}
+.ico.lg{width:40px;height:40px;border-radius:6px;margin:0;vertical-align:middle}
+span.ico.lg{width:auto;height:auto;font-size:28px}
+.rn{display:flex;align-items:center;gap:2px;min-width:0}
+.rn input{flex:1 1 auto;min-width:0}
+.filebtn{display:inline-flex;align-items:center;cursor:pointer}
+#cf .inner{display:grid;gap:10px}
+#cf summary .chip{margin-left:8px}
+
+/* Elementos de un evento */
+.rl.vl{width:auto;min-width:34px;padding:0 10px;white-space:nowrap}
+.vrow select,.vrow input[type=text]{flex:1 1 150px;min-width:0;width:auto}

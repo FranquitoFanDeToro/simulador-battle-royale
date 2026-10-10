@@ -51,6 +51,12 @@ Al abrir un evento, la pantalla muestra por defecto el **Programa del evento**: 
 
 Todavía no existen: los escenarios y «dividirse para buscar recursos».
 
+## Novedades de la etapa 5: elementos de evento y mejoras
+- **Elementos del evento**: un evento puede elegir solo objetos, habilidades, estados alterados y equipos, y nombrarlos en el texto (`{Objeto1}`, `{Habilidad1}`, `{Estado1}`, `{Equipo1}`). Se definen en la sección «Elementos del evento» (de un participante, o cualquiera del proyecto; con la restricción «que Y no tenga»). Si no se puede elegir, el evento no ocurre.
+- **Efectos nuevos**: pasar un objeto de uno a otro, intercambiar objetos, eliminar a un equipo entero, y que dos equipos peleen hasta la muerte. Los eventos de ejemplo incluyen cinco casos (intercambio, regalo, copiar habilidad, sopa extraña, pelea de equipos).
+- **Límites por stat** (mínimo y máximo para cada una), **emoji o imagen como ícono** de objetos y habilidades, **orden y filtros** (A→Z, letra inicial, por stats, objetos, habilidades, estados, equipos) y la imagen de la ficha del personaje ya no se estira.
+- Los proyectos viejos se actualizan solos al cargarlos (versión 5).
+
 ## Qué hay en cada archivo
 
 | Archivo | Para qué sirve |
@@ -63,5 +69,6 @@ Todavía no existen: los escenarios y «dividirse para buscar recursos».
 | `js/interfaz.js` | Pantallas y botones. |
 | `js/bloques.js` | Editor visual de bloques (arrastrar, anidar, colores). |
 | `js/interfaz-estados.js` | Pantallas de estados alterados. |
+| `js/interfaz-elementos.js` | Sección «Elementos del evento». |
 | `js/interfaz-equipos.js` | Pantallas de equipos y vocabulario. |
 | `js/inicio.js` | Arranque. |
