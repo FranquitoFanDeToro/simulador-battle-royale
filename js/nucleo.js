@@ -4,15 +4,21 @@
    No toca la pantalla. Todo lo que el usuario crea vive en el objeto P:
 
    P = {
-     v: 2,
-     stats:  [{id, name, def}]                       catálogo de stats
-     items:  [{id, name, size, cat}]                 objetos (size = espacio que ocupan)
-     skills: [{id, name, cat}]                       habilidades
-     chars:  [{id, name, gender, enabled, slots,     personajes
-               imgs:[{id, kind:'file'|'url'|'data', src, tag}],
-               items:[ids], skills:[ids], stats:{statId: número}}]
-     events: [{id, text, weight, roles:[{n, req, look}],
-               cond:{...árbol de reglas...}, fx:[efectos]}]
+     v: 3,
+     stats:    [{id, name, def}]                     catálogo de stats
+     items:    [{id, name, size, cat}]               objetos (size = espacio que ocupan)
+     skills:   [{id, name, cat}]                     habilidades
+     emotions: [{id, name, icon, days}]              emociones (days: se pasa sola; 0 = no)
+     chars:    [{id, name, gender, enabled, slots,   personajes
+                 imgs:[{id, kind:'file'|'url'|'data', src, tag}],
+                 items:[ids], skills:[ids], stats:{statId: número},
+                 loy: 0-100, emotion: id|''}]
+     teams:    [{id, name, leader, members:[ids], share}]   equipos que existen desde el día 1
+     words:    {nouns:[{id,text,num,gen}], adjs:[...]}      vocabulario del generador de nombres
+     teamPresets: [texto]                            nombres de equipo preestablecidos
+     events:   [{id, text, weight, roles:[{n, req, look}],
+                 cond:{...árbol de reglas...}, fx:[efectos],
+                 chance:{mode, pct, stat}, failText, fxFail:[efectos]}]
    }
    ===================================================================== */
 
@@ -21,7 +27,8 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;'
 
 const GEN={f:'Femenino',m:'Masculino',o:'Otro'};
 const ROLE_NAMES=['X','Y','Z','W'];
-const KINDS=['item','space','skill','gender','status','hasstat','stat','statvs'];
+const KINDS=['item','space','skill','gender','status','hasstat','stat','statvs','emotion','loyalty','inteam','isleader','sameteam','teamsize','teamitem'];
+const NOVAL=['inteam','isleader','sameteam','teamsize','loyalty'];   // reglas que no eligen un valor de una lista
 const CMP=['>=','>','<=','<','=','!='];
 const CMP_LBL={'>=':'≥','>':'>','<=':'≤','<':'<','=':'=','!=':'≠'};
 const FX={
@@ -30,10 +37,28 @@ const FX={
   removeItem:{label:'Quita el objeto',ref:'items',prep:'de'},
   giveSkill:{label:'Otorga la habilidad',ref:'skills',prep:'a'},
   removeSkill:{label:'Quita la habilidad',ref:'skills',prep:'de'},
-  stat:{label:'Cambia la stat',ref:'stats',prep:'de'}
+  stat:{label:'Cambia la stat',ref:'stats',prep:'de'},
+  emotion:{label:'Cambia la emoción a',ref:'emotions',prep:'de'},
+  emotionClear:{label:'Quita la emoción',ref:null,prep:'de'},
+  loyalty:{label:'Cambia la lealtad',ref:null,prep:'de'},
+  teamForm:{label:'Forma un equipo',ref:null,prep:''},
+  teamJoin:{label:'Incorpora a un equipo',ref:null,prep:''},
+  teamLeave:{label:'Saca del equipo a',ref:null,prep:''},
+  teamShare:{label:'Inventario compartido',ref:null,prep:''},
+  teamTake:{label:'Toma del equipo el objeto',ref:'items',prep:'para'}
+};
+const TEAM_FX=['teamForm','teamJoin'];     // efectos que necesitan un segundo participante (campo «by»)
+const CHANCE_MODES=['always','fixed','stat','team','loyalty'];
+const CHANCE_LBL={
+  always:'Siempre ocurre tal cual',
+  fixed:'Probabilidad fija',
+  stat:'Según una stat de X contra Y',
+  team:'Según el tamaño del equipo de X contra el de Y',
+  loyalty:'Según la lealtad de X (menos lealtad, más probabilidad)'
 };
 const DEFAULT_SLOTS=5;
 let P=null;
+let CURSIM=null;   // simulación en curso: las reglas de equipo la consultan
 
 const emptyCond=()=>({t:'g',op:'and',c:[]});
 const safeUrl=s=>/^(https?:\/\/|data:image\/)/i.test(String(s||''));
@@ -45,16 +70,40 @@ function sampleProject(){
   const I={cu:'it_cuchillo',ar:'it_arco',bo:'it_botiquin'};
   const K={si:'sk_sigilo',pu:'sk_punteria',au:'sk_auxilios'};
   const T={fu:'st_fuerza',ag:'st_agilidad',ing:'st_ingenio'};
-  const C=(name,gender,items,skills,stats)=>({id:uid(),name,gender,enabled:true,slots:4,imgs:[],items:items||[],skills:skills||[],stats:stats||{}});
+  const M={mi:'em_miedo',fu:'em_furia',ca:'em_calma',tr:'em_tristeza'};
+  const C=(name,gender,items,skills,stats,loy)=>({id:uid(),name,gender,enabled:true,slots:4,imgs:[],items:items||[],skills:skills||[],stats:stats||{},loy:loy==null?50:loy,emotion:''});
   const rl=(n,req)=>({n:n,req:req||'alive',look:''});
-  const E=(text,weight,roles,cond,fx)=>({
-    id:uid(),text,weight,roles,cond:cond||emptyCond(),
-    fx:(fx||[]).map(f=>Object.assign({k:'kill',role:'X',ref:'',by:'',mode:'add',num:1},f))
-  });
+  const FXD=f=>Object.assign({k:'kill',role:'X',ref:'',by:'',mode:'add',num:1,nm:'any'},f);
+  const E=(text,weight,roles,cond,fx,extra)=>Object.assign({
+    id:uid(),text,weight,roles,cond:cond||emptyCond(),fx:(fx||[]).map(FXD),
+    chance:{mode:'always',pct:50,stat:''},failText:'',fxFail:[]
+  },extra||{},{fxFail:((extra&&extra.fxFail)||[]).map(FXD)});
   const X=rl('X'), Y=rl('Y');
-  return {
-    v:2,
+  const NM=()=>R('X','sameteam','',true,{role2:'Y'});      // «X no es del mismo equipo que Y»
+  const MATES=()=>R('X','sameteam','',false,{role2:'Y'});  // «X es del mismo equipo que Y»
+  const proj={
+    v:3,
     fallback:'{X} pasó el día sin novedades.',
+    emotions:[
+      {id:M.mi,name:'Miedo',icon:'😨',days:2},
+      {id:M.fu,name:'Furia',icon:'😡',days:2},
+      {id:M.ca,name:'Calma',icon:'🙂',days:0},
+      {id:M.tr,name:'Tristeza',icon:'😢',days:3}
+    ],
+    words:{
+      nouns:[
+        {id:'wn1',text:'Guardianes',num:'p',gen:'m'},{id:'wn2',text:'Lobos',num:'p',gen:'m'},
+        {id:'wn3',text:'Sombras',num:'p',gen:'f'},{id:'wn4',text:'Cuervos',num:'p',gen:'m'},
+        {id:'wn5',text:'Llama',num:'s',gen:'f'},{id:'wn6',text:'Torre',num:'s',gen:'f'},
+        {id:'wn7',text:'Aceite',num:'s',gen:'m'}
+      ],
+      adjs:[
+        {id:'wa1',text:'Rojos',num:'p',gen:'m'},{id:'wa2',text:'Silenciosas',num:'p',gen:'f'},
+        {id:'wa3',text:'Primordial',num:'s',gen:'x'},{id:'wa4',text:'Negra',num:'s',gen:'f'},
+        {id:'wa5',text:'Valientes',num:'p',gen:'x'}
+      ]
+    },
+    teamPresets:['Alianza del Norte','Los Supervivientes'],
     stats:[{id:T.fu,name:'Fuerza',def:5},{id:T.ag,name:'Agilidad',def:5},{id:T.ing,name:'Ingenio',def:5}],
     items:[
       {id:I.cu,name:'Cuchillo',size:1,cat:'Armas'},
@@ -72,29 +121,47 @@ function sampleProject(){
       C('Lucía','f',[],[K.au],{[T.ing]:8,[T.ag]:5}),
       C('Mateo','m',[I.cu],[],{[T.fu]:8}),
       C('Camila','f',[],[K.si],{[T.ag]:8,[T.ing]:6}),
-      C('Joaquín','m',[I.ar],[K.pu],{[T.fu]:5,[T.ag]:6}),
+      C('Joaquín','m',[I.ar],[K.pu],{[T.fu]:5,[T.ag]:6},30),
       C('Sofía','f',[I.bo],[],{[T.ing]:6}),
-      C('Bruno','m',[],[],{})
+      C('Bruno','m',[],[],{},35)
     ],
     events:[
       E('{X} encontró un cuchillo entre unos arbustos.',3,[X],G('and',R('X','item',I.cu,true),R('X','space',I.cu)),[{k:'giveItem',role:'X',ref:I.cu}]),
-      E('{X} apuñaló a {Y} hasta la muerte.',3,[X,Y],G('and',R('X','item',I.cu)),[{k:'kill',role:'Y'}]),
+      E('{X} apuñaló a {Y} hasta la muerte.',3,[X,Y],G('and',R('X','item',I.cu),NM()),[{k:'kill',role:'Y'}]),
       E('{X} encontró un arco abandonado.',2,[X],G('and',R('X','item',I.ar,true),R('X','space',I.ar)),[{k:'giveItem',role:'X',ref:I.ar}]),
-      E('{X} le disparó una flecha a {Y} desde lejos.',3,[X,Y],G('and',R('X','item',I.ar),G('or',R('X','skill',K.pu),R('Y','skill',K.si,true))),[{k:'kill',role:'Y'}]),
+      E('{X} le disparó una flecha a {Y} desde lejos.',3,[X,Y],G('and',R('X','item',I.ar),NM(),G('or',R('X','skill',K.pu),R('Y','skill',K.si,true))),[{k:'kill',role:'Y'}]),
       E('{X} encontró un botiquín.',2,[X],G('and',R('X','item',I.bo,true),R('X','space',I.bo)),[{k:'giveItem',role:'X',ref:I.bo}]),
       E('{X} usó el botiquín para curarse las heridas.',2,[X],G('and',R('X','item',I.bo)),[{k:'removeItem',role:'X',ref:I.bo}]),
       E('{X} curó las heridas de {Y} y se ganó su confianza.',2,[X,Y],G('and',R('X','item',I.bo),R('X','skill',K.au)),[{k:'removeItem',role:'X',ref:I.bo}]),
-      E('{X} le robó el cuchillo a {Y} mientras dormía.',3,[X,Y],G('and',R('Y','item',I.cu),R('X','item',I.cu,true),R('X','skill',K.si),R('X','space',I.cu)),[{k:'removeItem',role:'Y',ref:I.cu},{k:'giveItem',role:'X',ref:I.cu}]),
-      E('{X} desarmó a {Y} en un forcejeo y se quedó con su cuchillo.',3,[X,Y],G('and',R('Y','item',I.cu),R('X','item',I.cu,true),R('X','space',I.cu),R('X','statvs',T.fu,false,{op:'>',role2:'Y'})),[{k:'removeItem',role:'Y',ref:I.cu},{k:'giveItem',role:'X',ref:I.cu}]),
+      E('{X} le robó el cuchillo a {Y} mientras dormía.',3,[X,Y],G('and',R('Y','item',I.cu),R('X','item',I.cu,true),R('X','skill',K.si),R('X','space',I.cu),NM()),[{k:'removeItem',role:'Y',ref:I.cu},{k:'giveItem',role:'X',ref:I.cu}]),
+      E('{X} desarmó a {Y} en un forcejeo y se quedó con su cuchillo.',3,[X,Y],G('and',R('Y','item',I.cu),R('X','item',I.cu,true),R('X','space',I.cu),R('X','statvs',T.fu,false,{op:'>',role2:'Y'}),NM()),[{k:'removeItem',role:'Y',ref:I.cu},{k:'giveItem',role:'X',ref:I.cu}]),
       E('{X} entrenó toda la mañana y ganó fuerza.',2,[X],G('and',R('X','hasstat',T.fu)),[{k:'stat',role:'X',ref:T.fu,mode:'add',num:1}]),
       E('{X} y {Y} compartieron una fogata y hablaron de su casa.',4,[X,Y]),
       E('{X} y {Y} acordaron no atacarse.',2,[X,Y]),
       E('{X} pasó el día escondido en una cueva.',3,[X]),
       E('{X} aprendió a moverse sin hacer ruido.',1,[X],G('and',R('X','skill',K.si,true)),[{k:'giveSkill',role:'X',ref:K.si}]),
       E('{X} se quedó junto al cuerpo de {Y} sin decir nada.',2,[X,rl('Y','dead')]),
-      E('{X} se resbaló en un barranco y no pudo salir.',1,[X],emptyCond(),[{k:'kill',role:'X'}])
+      E('{X} se resbaló en un barranco y no pudo salir.',1,[X],emptyCond(),[{k:'kill',role:'X'}]),
+      /* ---- equipos, lealtad y emociones ---- */
+      E('{X} le propuso una alianza a {Y} y formaron un equipo.',2,[X,Y],G('and',R('X','inteam','',true),R('Y','inteam','',true)),[{k:'teamForm',role:'X',by:'Y',nm:'any',num:1}]),
+      E('{X} invitó a {Y} a unirse a su equipo.',2,[X,Y],G('and',R('X','inteam'),R('Y','inteam','',true)),[{k:'teamJoin',role:'Y',by:'X'}]),
+      E('{X} compartió su comida con {Y} y su lealtad creció.',2,[X,Y],G('and',MATES()),[{k:'loyalty',role:'Y',mode:'add',num:10},{k:'emotion',role:'Y',ref:M.ca}]),
+      E('{X} discutió con {Y} por cómo repartir las provisiones.',2,[X,Y],G('and',MATES()),[{k:'loyalty',role:'X',mode:'add',num:-12},{k:'emotion',role:'X',ref:M.fu}]),
+      E('{X} propuso poner todas las cosas del equipo en común.',1,[X],G('and',R('X','isleader')),[{k:'teamShare',role:'X',num:1}]),
+      E('{X} tomó el cuchillo que guardaba el equipo.',2,[X],G('and',R('X','teamitem',I.cu),R('X','item',I.cu,true),R('X','space',I.cu)),[{k:'teamTake',role:'X',ref:I.cu}]),
+      E('{X} traicionó a {Y} y lo dejó sin vida.',2,[X,Y],G('and',MATES(),R('X','loyalty','',false,{op:'<=',num:40})),[{k:'kill',role:'Y'},{k:'teamLeave',role:'X'}],
+        {chance:{mode:'loyalty',pct:50,stat:''},failText:'{X} pensó en traicionar a {Y}, pero no se atrevió.',fxFail:[{k:'loyalty',role:'X',mode:'add',num:5}]}),
+      E('{X} abandonó el equipo, harto de las discusiones.',1,[X],G('and',R('X','inteam'),R('X','loyalty','',false,{op:'<=',num:30})),[{k:'teamLeave',role:'X'},{k:'emotion',role:'X',ref:M.fu}]),
+      E('{X} y su equipo emboscaron a {Y} en el bosque.',2,[X,Y],G('and',R('X','inteam'),NM()),[{k:'kill',role:'Y'}],
+        {chance:{mode:'team',pct:50,stat:''},failText:'{Y} esquivó la emboscada de {X} y escapó.',fxFail:[{k:'emotion',role:'X',ref:M.mi}]}),
+      E('{X} se asustó al oír pasos cerca.',2,[X],emptyCond(),[{k:'emotion',role:'X',ref:M.mi}]),
+      E('{X} se sintió muy triste frente al cuerpo de {Y}.',2,[X,rl('Y','dead')],emptyCond(),[{k:'emotion',role:'X',ref:M.tr}])
     ]
   };
+  /* un equipo ya armado desde el día 1: Mateo (líder) y Joaquín */
+  const mateo=proj.chars.find(c=>c.name==='Mateo'),joaquin=proj.chars.find(c=>c.name==='Joaquín');
+  proj.teams=[{id:'tm_lobos',name:'Los Lobos',leader:mateo.id,members:[mateo.id,joaquin.id],share:false}];
+  return proj;
 }
 
 /* ---------- Normalizar (también migra proyectos de la versión 1) ---------- */
@@ -123,10 +190,15 @@ function normalize(p){
   if(!p||typeof p!=='object') return null;
   const arr=a=>Array.isArray(a)?a:[];
   const num=(v,d)=>{v=parseFloat(v);return isFinite(v)?v:d;};
-  const o={v:2,stats:[],items:[],skills:[],chars:[],events:[],fallback:'{X} pasó el día sin novedades.'};
+  const normFx=l=>arr(l).filter(f=>f&&FX[f.k]).map(f=>({
+    k:f.k,role:String(f.role||'X'),ref:f.ref?String(f.ref):'',by:String(f.by||''),
+    mode:f.mode==='set'?'set':'add',num:num(f.num,1),nm:['gen','preset','any'].includes(f.nm)?f.nm:'any'
+  }));
+  const o={v:3,stats:[],items:[],skills:[],emotions:[],chars:[],teams:[],words:{nouns:[],adjs:[]},teamPresets:[],events:[],fallback:'{X} pasó el día sin novedades.'};
   o.stats=arr(p.stats).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),def:num(i.def,5)}));
   o.items=arr(p.items).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),size:Math.max(0,Math.floor(num(i.size,1))),cat:String(i.cat||'')}));
   o.skills=arr(p.skills).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),cat:String(i.cat||'')}));
+  o.emotions=arr(p.emotions).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),icon:String(i.icon||'').slice(0,8),days:Math.max(0,Math.floor(num(i.days,0)))}));
   o.chars=arr(p.chars).filter(c=>c&&c.id).map(c=>{
     let imgs=arr(c.imgs).filter(i=>i&&i.id&&['file','url','data'].includes(i.kind)&&(i.kind==='file'||safeUrl(i.src)))
       .map(i=>({id:String(i.id),kind:i.kind,src:i.kind==='file'?'':String(i.src),tag:String(i.tag||'')}));
@@ -138,20 +210,37 @@ function normalize(p){
     return {
       id:String(c.id),name:String(c.name||''),gender:GEN[c.gender]?c.gender:'o',enabled:c.enabled!==false,
       slots:Math.max(0,Math.floor(num(c.slots,DEFAULT_SLOTS))),imgs,
-      items:arr(c.items).map(String),skills:arr(c.skills).map(String),stats
+      items:arr(c.items).map(String),skills:arr(c.skills).map(String),stats,
+      loy:Math.min(100,Math.max(0,num(c.loy,50))),
+      emotion:o.emotions.some(m=>m.id===String(c.emotion||''))?String(c.emotion):''
     };
   });
+  /* equipos: cada personaje en un solo equipo, y el líder tiene que ser miembro */
+  const taken=new Set();
+  o.teams=arr(p.teams).filter(t=>t&&t.id).map(t=>{
+    const members=arr(t.members).map(String).filter(id=>o.chars.some(c=>c.id===id)&&!taken.has(id)&&taken.add(id));
+    return {id:String(t.id),name:String(t.name||''),leader:members.includes(String(t.leader||''))?String(t.leader):'',members,share:!!t.share};
+  });
+  const normWords=l=>arr(l).filter(w=>w&&w.id&&String(w.text||'').trim()).map(w=>({
+    id:String(w.id),text:String(w.text).trim(),num:w.num==='p'?'p':'s',gen:w.gen==='f'?'f':(w.gen==='x'?'x':'m')
+  }));
+  o.words={nouns:normWords(p.words&&p.words.nouns),adjs:normWords(p.words&&p.words.adjs)};
+  o.teamPresets=arr(p.teamPresets).map(s=>String(s).trim()).filter(Boolean);
   o.events=arr(p.events).filter(e=>e&&e.id).map(e=>{
     const cond=normCond(e.cond);
+    const ch=(e.chance&&typeof e.chance==='object')?e.chance:{};
     return {
       id:String(e.id),text:String(e.text||''),
       weight:Math.min(10,Math.max(1,parseInt(e.weight,10)||3)),
       roles:normRoles(e.roles),
       cond:(cond&&cond.t==='g')?cond:emptyCond(),
-      fx:arr(e.fx).filter(f=>f&&FX[f.k]).map(f=>({
-        k:f.k,role:String(f.role||'X'),ref:f.ref?String(f.ref):'',by:String(f.by||''),
-        mode:f.mode==='set'?'set':'add',num:num(f.num,1)
-      }))
+      fx:normFx(e.fx),
+      chance:{
+        mode:CHANCE_MODES.includes(ch.mode)?ch.mode:'always',
+        pct:Math.min(100,Math.max(0,num(ch.pct,50))),stat:String(ch.stat||'')
+      },
+      failText:String(e.failText||''),
+      fxFail:normFx(e.fxFail)
     };
   });
   if(typeof p.fallback==='string'&&p.fallback.trim()) o.fallback=p.fallback;
@@ -194,24 +283,40 @@ function evalNode(n,as){
     case 'hasstat': v=!!n.val&&hasStat(ch,n.val); break;
     case 'stat': v=!!n.val&&cmp(statVal(ch,n.val),n.op,n.num); break;
     case 'statvs': {const c2=as[n.role2];v=!!n.val&&!!c2&&cmp(statVal(ch,n.val),n.op,statVal(c2,n.val));break;}
+    case 'emotion': v=!!n.val&&ch.emotion===n.val; break;
+    case 'loyalty': v=cmp(ch.loy,n.op,n.num); break;
+    case 'inteam': v=!!teamOf(ch); break;
+    case 'isleader': {const t=teamOf(ch);v=!!t&&t.leader===ch.id;break;}
+    case 'sameteam': {const c2=as[n.role2];v=!!c2&&!!ch.team&&ch.team===c2.team;break;}
+    case 'teamsize': {const t=teamOf(ch);v=cmp(t?t.members.length:0,n.op,n.num);break;}
+    case 'teamitem': v=!!n.val&&hasItemOrShared(ch,n.val); break;
   }
   return n.neg?!v:v;
 }
 
 function newSim(){
   const okIds=(list,ids)=>ids.filter(id=>list.some(i=>i.id===id));
-  return {
-    day:0,over:false,capped:false,days:[],
+  const sim={
+    day:0,over:false,capped:false,days:[],teams:[],teamSeq:0,
     chars:P.chars.filter(c=>c.enabled).map(c=>{
       const stats={};
       Object.keys(c.stats).forEach(id=>{if(P.stats.some(s=>s.id===id))stats[id]=c.stats[id];});
       return {
         id:c.id,name:c.name||'Sin nombre',gender:c.gender,imgs:c.imgs,slots:c.slots,
         items:new Set(okIds(P.items,c.items)),skills:new Set(okIds(P.skills,c.skills)),stats,
+        loy:c.loy,emotion:c.emotion,emoDay:0,team:null,
         alive:true,kills:0,victims:[],killedBy:null,diedDay:null
       };
     })
   };
+  /* equipos armados de antemano: solo cuentan los miembros que participan */
+  P.teams.forEach(t=>{
+    const ids=t.members.filter(id=>sim.chars.some(c=>c.id===id));
+    if(!ids.length) return;
+    sim.teams.push({id:t.id,name:t.name||teamFallbackName(sim),leader:ids.includes(t.leader)?t.leader:'',members:ids.slice(),share:!!t.share});
+    ids.forEach(id=>{sim.chars.find(c=>c.id===id).team=t.id;});
+  });
+  return sim;
 }
 
 function pickAssignment(e,actor,sim,used,ignoreCond){
@@ -244,8 +349,9 @@ function fmt(text,as){
 }
 const roleLook=(e,k)=>{const r=e.roles.find(x=>x.n===k);return r?r.look:'';};
 
-function applyFx(e,as,actor,sim,entry){
-  for(const f of e.fx){
+/* Aplica una lista de efectos (los de «ocurre» o los de «no sale bien»). */
+function applyFx(list,as,actor,sim,entry){
+  for(const f of list){
     const t=as[f.role]; if(!t) continue;
     if(f.k==='kill'){
       if(!t.alive) continue;
@@ -257,6 +363,41 @@ function applyFx(e,as,actor,sim,entry){
       t.alive=false; t.diedDay=sim.day; t.killedBy=by;
       if(by){by.kills++;by.victims.push(t.name);}
       entry.deaths.push(t);
+      const lt=removeFromTeam(sim,t);          // los caídos dejan su equipo
+      if(lt&&lt.gone) entry.notes.push('El equipo «'+lt.team.name+'» se disolvió.');
+    } else if(f.k==='emotion'){
+      if(f.ref&&P.emotions.some(m=>m.id===f.ref)){t.emotion=f.ref;t.emoDay=sim.day;}
+    } else if(f.k==='emotionClear'){
+      t.emotion='';
+    } else if(f.k==='loyalty'){
+      t.loy=Math.min(100,Math.max(0,f.mode==='set'?f.num:t.loy+f.num));
+    } else if(f.k==='teamForm'){
+      const o=as[f.by];
+      if(!o||o.id===t.id) continue;
+      if(t.team||o.team){entry.notes.push('No se formó el equipo: '+(t.team?t.name:o.name)+' ya tenía uno.');continue;}
+      const nt=formTeam(sim,t,o,f.nm,f.num>0);
+      entry.notes.push('Se formó el equipo «'+nt.name+'»'+(nt.leader?' con '+t.name+' como líder.':'.'));
+    } else if(f.k==='teamJoin'){
+      const o=as[f.by],team=o?teamOf(o):null;
+      if(!o||!team||t.team){entry.notes.push('No se pudo incorporar a '+t.name+(t.team?': ya tiene equipo.':': no hay equipo al que unirse.'));continue;}
+      joinTeam(sim,t,team);
+      entry.notes.push(t.name+' se unió al equipo «'+team.name+'».');
+    } else if(f.k==='teamLeave'){
+      const r=removeFromTeam(sim,t);
+      if(r) entry.notes.push(t.name+' dejó el equipo «'+r.team.name+'»'+(r.gone?', que se disolvió.':'.'));
+    } else if(f.k==='teamShare'){
+      const team=teamOf(t);
+      if(!team){entry.notes.push(t.name+' no tiene equipo: no hay inventario que compartir.');continue;}
+      team.share=f.num>0;
+      entry.notes.push(team.share?'El equipo «'+team.name+'» comparte su inventario.':'El equipo «'+team.name+'» dejó de compartir su inventario.');
+    } else if(f.k==='teamTake'&&f.ref){
+      const team=teamOf(t);
+      const giver=team&&team.share?teamMates(team).find(m=>m.id!==t.id&&m.items.has(f.ref)):null;
+      if(!giver){entry.notes.push('El equipo no tenía el objeto '+nameOf(P.items,f.ref)+' para compartir.');continue;}
+      if(t.items.has(f.ref)) continue;
+      if(slotsFree(t)<sizeOf(f.ref)){entry.notes.push(t.name+' no tenía espacio para '+nameOf(P.items,f.ref)+'.');continue;}
+      giver.items.delete(f.ref);t.items.add(f.ref);
+      entry.notes.push(t.name+' tomó '+nameOf(P.items,f.ref)+' de '+giver.name+'.');
     } else if(f.k==='giveItem'&&f.ref){
       if(t.items.has(f.ref)) continue;
       if(slotsFree(t)<sizeOf(f.ref)){entry.notes.push(t.name+' no tenía espacio para '+nameOf(P.items,f.ref)+'.');continue;}
@@ -283,14 +424,45 @@ function chaosShake(sim,level){
     c.items=new Set();
     shuffle(P.items.slice()).forEach(it=>{if(Math.random()<0.5&&slotsFree(c)>=it.size)c.items.add(it.id);});
     c.skills=new Set(P.skills.filter(()=>Math.random()<0.4).map(s=>s.id));
+    c.loy=Math.floor(Math.random()*101);
+    if(P.emotions.length&&Math.random()<0.6){c.emotion=P.emotions[Math.floor(Math.random()*P.emotions.length)].id;c.emoDay=sim.day;}
   });
   return n;
+}
+
+/* Probabilidad (0 a 1) de que el evento «salga bien» según su modo. */
+function successChance(e,as){
+  const c=e.chance;
+  if(!c||c.mode==='always') return 1;
+  const A=as[e.roles[0].n],B=e.roles[1]?as[e.roles[1].n]:null;
+  switch(c.mode){
+    case 'fixed': return Math.min(1,Math.max(0,c.pct/100));
+    case 'stat': {
+      if(!B||!c.stat) return 0.5;
+      const a=Math.max(0,statVal(A,c.stat)),b=Math.max(0,statVal(B,c.stat));
+      return a+b>0?a/(a+b):0.5;
+    }
+    case 'team': {
+      if(!B) return 0.5;
+      const a=Math.max(1,teamSizeOf(A)),b=Math.max(1,teamSizeOf(B));   // sin equipo cuenta como uno solo
+      return a/(a+b);
+    }
+    case 'loyalty': return Math.min(1,Math.max(0,1-A.loy/100));
+  }
+  return 1;
 }
 
 function playDay(sim,opts){
   if(sim.over) return;
   opts=opts||{};
+  CURSIM=sim;
   sim.day++;
+  /* las emociones con duración se pasan solas */
+  sim.chars.forEach(c=>{
+    if(!c.alive||!c.emotion) return;
+    const d=emoDays(c.emotion);
+    if(d>0&&sim.day-c.emoDay>=d) c.emotion='';
+  });
   const used=new Set(), entries=[];
   let chaos=null;
   if(opts.chaos>0) chaos={shaken:chaosShake(sim,opts.chaos),wild:0};
@@ -307,7 +479,7 @@ function playDay(sim,opts){
     }
     if(!cands.length){
       used.add(actor.id);
-      entries.push({html:fmt(P.fallback,{X:actor}),who:[{c:actor,src:lookSrc(actor,'')}],deaths:[],notes:[]});
+      entries.push({html:fmt(P.fallback,{X:actor}),who:[{c:actor,src:lookFor(actor,'')}],deaths:[],notes:[],chance:null});
       continue;
     }
     let r=Math.random()*cands.reduce((a,c)=>a+c.w,0), pick=cands[cands.length-1];
@@ -315,8 +487,16 @@ function playDay(sim,opts){
     const {e,as}=pick;
     if(ignore&&chaos) chaos.wild++;
     Object.keys(as).forEach(k=>used.add(as[k].id));
-    const entry={html:fmt(e.text,as),who:Object.keys(as).map(k=>({c:as[k],src:lookSrc(as[k],roleLook(e,k))})),deaths:[],notes:[]};
-    applyFx(e,as,actor,sim,entry);
+    /* ¿sale bien o mal? (si el evento no tiene probabilidad, siempre sale como está escrito) */
+    const p=successChance(e,as);
+    const ok=p>=1||Math.random()<p;
+    const text=(!ok&&e.failText.trim())?e.failText:e.text;
+    const entry={
+      html:fmt(text,as),
+      who:Object.keys(as).map(k=>({c:as[k],src:lookFor(as[k],roleLook(e,k))})),
+      deaths:[],notes:[],chance:(e.chance&&e.chance.mode!=='always')?Math.round(p*100):null
+    };
+    applyFx(ok?e.fx:e.fxFail,as,actor,sim,entry);
     entries.push(entry);
   }
   const alive=sim.chars.filter(c=>c.alive).length;
@@ -325,3 +505,9 @@ function playDay(sim,opts){
 }
 
 const nameOf=(arr,id)=>{const x=arr.find(i=>i.id===id);return x?(x.name||'Sin nombre'):'';};
+
+/* Emociones: duración y nombre (el nombre sirve de etiqueta para elegir la imagen). */
+const emoDays=id=>{const m=P.emotions.find(x=>x.id===id);return m?m.days:0;};
+const emoName=ch=>ch.emotion?nameOf(P.emotions,ch.emotion):'';
+/* Imagen de un personaje en la simulación: la del evento; si no hay, la de su emoción; si no, la principal. */
+const lookFor=(ch,tag)=>lookSrc(ch,(tag||'').trim()?tag:emoName(ch));

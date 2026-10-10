@@ -17,17 +17,23 @@ const app=$('#app'), tabsEl=$('#tabs');
 const REQ=[['alive','Debe estar vivo'],['dead','Debe estar muerto'],['any','Vivo o muerto']];
 const OPS={and:'Y · todas',or:'O · alguna',not:'NO · ninguna'};
 const EXPL={and:'Se cumplen todas las reglas de este grupo.',or:'Se cumple al menos una de estas reglas.',not:'No se cumple ninguna de estas reglas.'};
-const KIND_LBL={item:'tiene el objeto',space:'tiene espacio para',skill:'tiene la habilidad',gender:'es de sexo',status:'está',hasstat:'posee la stat',stat:'con valor de',statvs:'compara la stat'};
+const KIND_LBL={
+  item:'tiene el objeto',space:'tiene espacio para',skill:'tiene la habilidad',gender:'es de sexo',status:'está',
+  hasstat:'posee la stat',stat:'con valor de',statvs:'compara la stat',
+  emotion:'siente',loyalty:'tiene lealtad',inteam:'tiene equipo',isleader:'es líder de su equipo',
+  sameteam:'está en el mismo equipo que',teamsize:'tiene un equipo de tamaño',teamitem:'tiene (propio o compartido) el objeto'
+};
 const KL={
+  emotions:{title:'Emociones',noun:'emoción',ph:'Ej: Miedo',hint:'Una emoción es un estado de ánimo que un personaje puede sentir (de a una por vez). Los eventos pueden pedirla como condición, otorgarla o quitarla. Si «dura» algunos días, se pasa sola. Si el personaje tiene una imagen con una etiqueta igual al nombre de la emoción, esa imagen se muestra mientras la siente.'},
   items:{title:'Objetos',noun:'objeto',ph:'Ej: Cuchillo',hint:'Un objeto ocupa espacio (tamaño) en el inventario de un personaje. Los eventos pueden pedirlo como condición, entregarlo o quitarlo. La categoría sirve para marcar grupos enteros de una vez.'},
   skills:{title:'Habilidades',noun:'habilidad',ph:'Ej: Sigilo',hint:'Una habilidad es algo que un personaje sabe hacer. Los eventos pueden pedirla como condición, otorgarla o quitarla.'},
   stats:{title:'Stats',noun:'stat',ph:'Ej: Fuerza',hint:'Una stat es un número que algunos personajes tienen (fuerza, agilidad, hambre…). No es universal: lo que un personaje no tiene vale 0 y los eventos no pueden cambiárselo. El valor inicial se usa al agregarla a un personaje.'}
 };
 
 let ui={
-  tab:'sim',char:null,ev:null,bulk:false,selMode:false,sel:new Set(),
-  q:{chars:'',items:'',skills:'',stats:'',events:'',roster:''},
-  pq:{items:'',skills:''},fgender:'',fstate:'',evf:'',
+  tab:'sim',char:null,ev:null,team:null,bulk:false,selMode:false,sel:new Set(),
+  q:{chars:'',items:'',skills:'',stats:'',emotions:'',events:'',roster:'',teams:'',members:''},
+  pq:{items:'',skills:''},fgender:'',fstate:'',evf:'',nameSamples:[],
   simSel:null,simFilter:'all',summary:false,optsOpen:false,shuffleN:10,chaos:false,chaosLvl:5,
   dataMsg:'',importBuf:'',exportText:'',exportMsg:''
 };
@@ -51,7 +57,7 @@ function avS(name,src,cls){
   const ini=((parts[0]||'?')[0]+(parts[1]?parts[1][0]:'')).toUpperCase();
   return `<span class="av ${cls||''}" style="--h:${hue(name||'')}">${esc(ini)}${src?`<img src="${esc(src)}" alt="" data-fb="1" loading="lazy">`:''}</span>`;
 }
-const av=(c,cls)=>avS(nm(c),lookSrc(c,''),cls);
+const av=(c,cls)=>avS(nm(c),lookFor(c,''),cls);
 const tkHTML=t=>esc(t).replace(/\{([A-Z])\}/g,'<span class="tk">$1</span>');
 function previewHTML(e){
   const as={};
@@ -62,35 +68,46 @@ function previewHTML(e){
 /* ---------- Referencias y validación ---------- */
 function walkRules(n,fn){if(n.t==='g')n.c.forEach(c=>walkRules(c,fn));else fn(n);}
 function countRules(n){let k=0;walkRules(n,()=>{k++;});return k;}
-const refListOf=kind=>({item:'items',space:'items',skill:'skills',hasstat:'stats',stat:'stats',statvs:'stats'}[kind]||null);
+const refListOf=kind=>({item:'items',space:'items',teamitem:'items',skill:'skills',hasstat:'stats',stat:'stats',statvs:'stats',emotion:'emotions'}[kind]||null);
+const RULE_NEEDS_ROLE2=['statvs','sameteam'];
+const RULE_NEEDS_CMP=['stat','statvs','teamsize','loyalty'];
+const RULE_NEEDS_NUM=['stat','teamsize','loyalty'];
+const allFx=e=>e.fx.concat(e.fxFail);
 function usage(kind,id){
-  const lists={items:['items','item'],skills:['skills','skill'],stats:['stats','stat']};
-  const fk={items:['giveItem','removeItem'],skills:['giveSkill','removeSkill'],stats:['stat']}[kind];
+  const fk={items:['giveItem','removeItem','teamTake'],skills:['giveSkill','removeSkill'],stats:['stat'],emotions:['emotion']}[kind];
   const ev=P.events.filter(e=>{
     let hit=false;
     walkRules(e.cond,r=>{if(refListOf(r.kind)===kind&&r.val===id)hit=true;});
-    return hit||e.fx.some(f=>fk.includes(f.k)&&f.ref===id);
+    if(kind==='stats'&&e.chance.mode==='stat'&&e.chance.stat===id)hit=true;
+    return hit||allFx(e).some(f=>fk.includes(f.k)&&f.ref===id);
   }).length;
-  const ch=P.chars.filter(c=>kind==='stats'?hasStat(c,id):c[kind].includes(id)).length;
+  const ch=P.chars.filter(c=>kind==='stats'?hasStat(c,id):(kind==='emotions'?c.emotion===id:c[kind].includes(id))).length;
   return {ev,ch};
 }
-const NOUN={items:'objeto',skills:'habilidad',stats:'stat'};
+const NOUN={items:'objeto',skills:'habilidad',stats:'stat',emotions:'emoción'};
 function issues(e){
   const out=new Set(), rn=e.roles.map(r=>r.n);
   if(!e.text.trim()) out.add('El evento no tiene texto.');
-  [...e.text.matchAll(/\{([A-Z])\}/g)].forEach(m=>{if(!rn.includes(m[1]))out.add('El texto usa {'+m[1]+'}, pero ese participante no existe.');});
+  [...(e.text+' '+e.failText).matchAll(/\{([A-Z])\}/g)].forEach(m=>{if(!rn.includes(m[1]))out.add('El texto usa {'+m[1]+'}, pero ese participante no existe.');});
   walkRules(e.cond,r=>{
     if(!rn.includes(r.role)) out.add('Una regla usa el participante '+r.role+', que no existe.');
-    if(r.kind==='statvs'&&!rn.includes(r.role2)) out.add('Una regla compara con el participante '+r.role2+', que no existe.');
+    if(RULE_NEEDS_ROLE2.includes(r.kind)&&!rn.includes(r.role2)) out.add('Una regla compara con el participante '+r.role2+', que no existe.');
     const L=refListOf(r.kind);
     if(L&&!P[L].some(i=>i.id===r.val)) out.add('Una regla apunta a un/a '+NOUN[L]+' que falta o no está elegido/a.');
   });
-  e.fx.forEach(f=>{
+  allFx(e).forEach(f=>{
     if(!rn.includes(f.role)) out.add('Un efecto usa el participante '+f.role+', que no existe.');
-    if(f.by&&f.by!=='none'&&!rn.includes(f.by)) out.add('Una baja se le atribuye al participante '+f.by+', que no existe.');
+    if(f.by&&f.by!=='none'&&!rn.includes(f.by)) out.add('Un efecto usa el participante '+f.by+', que no existe.');
+    if(TEAM_FX.includes(f.k)&&!rn.includes(f.by)) out.add('Un efecto de equipo necesita un segundo participante.');
     const m=FX[f.k];
     if(m.ref&&!P[m.ref].some(i=>i.id===f.ref)) out.add('Un efecto apunta a un/a '+NOUN[m.ref]+' que falta o no está elegido/a.');
   });
+  const c=e.chance;
+  if(c.mode!=='always'){
+    if(!e.failText.trim()) out.add('Con probabilidad hace falta el texto de «si no sale bien».');
+    if((c.mode==='stat'||c.mode==='team')&&e.roles.length<2) out.add('Esa probabilidad compara a X con Y: agregá un segundo participante.');
+    if(c.mode==='stat'&&!P.stats.some(s=>s.id===c.stat)) out.add('La probabilidad por stat no tiene una stat elegida.');
+  }
   return [...out];
 }
 function allTags(){
@@ -101,24 +118,26 @@ function allTags(){
 
 /* ---------- Estructura general ---------- */
 function renderTabs(){
-  const T=[['chars','Personajes',P.chars.length],['items','Objetos',P.items.length],['skills','Habilidades',P.skills.length],['stats','Stats',P.stats.length],['events','Eventos',P.events.length],['sim','Simulación',null],['data','Datos',null]];
+  const T=[['chars','Personajes',P.chars.length],['teams','Equipos',P.teams.length],['items','Objetos',P.items.length],['skills','Habilidades',P.skills.length],['stats','Stats',P.stats.length],['emotions','Emociones',P.emotions.length],['events','Eventos',P.events.length],['sim','Simulación',null],['data','Datos',null]];
   tabsEl.innerHTML=T.map(t=>`<button type="button" class="${ui.tab===t[0]?'on':''}" ${ui.tab===t[0]?'aria-current="page"':''} data-act="tab" data-tab="${t[0]}">${t[1]}${t[2]!=null?`<span class="n">${t[2]}</span>`:''}</button>`).join('');
 }
 function render(){
   renderTabs();
-  const f={chars:vChars,items:()=>vTags('items'),skills:()=>vTags('skills'),stats:()=>vTags('stats'),events:vEvents,sim:vSim,data:vData}[ui.tab];
+  const f={chars:vChars,teams:vTeams,items:()=>vTags('items'),skills:()=>vTags('skills'),stats:()=>vTags('stats'),emotions:()=>vTags('emotions'),events:vEvents,sim:vSim,data:vData}[ui.tab];
   app.innerHTML=f();
 }
 function countText(k){
   if(k==='chars') return charsFiltered().length+' de '+P.chars.length;
   if(k==='events') return eventsFiltered().length+' de '+P.events.length;
+  if(k==='teams') return teamsFiltered().length+' de '+P.teams.length;
   return tagsFiltered(k).length+' de '+P[k].length;
 }
 /* Vuelve a dibujar solo la lista (así no se pierde el foco del buscador). */
 function refreshList(k){
   if(k==='roster'){const r=$('#rlist');if(r&&S)r.innerHTML=rosterListHTML(S);return;}
+  if(k==='members'){refreshMembers();return;}
   const el=$('#list');if(!el)return;
-  const f={chars:charsListHTML,items:()=>tagRowsHTML('items'),skills:()=>tagRowsHTML('skills'),stats:()=>tagRowsHTML('stats'),events:eventsListHTML}[k];
+  const f={chars:charsListHTML,teams:teamsListHTML,items:()=>tagRowsHTML('items'),skills:()=>tagRowsHTML('skills'),stats:()=>tagRowsHTML('stats'),emotions:()=>tagRowsHTML('emotions'),events:eventsListHTML}[k];
   if(f)el.innerHTML=f();
   const c=$('#count');if(c)c.textContent=countText(k);
   const sc=$('#selcount');if(sc)sc.textContent=plural(ui.sel.size,'seleccionado','seleccionados');
@@ -216,7 +235,10 @@ function vCharForm(c){
   <section class="card sec"><h3 class="h3">Ficha</h3>
   <div class="two">${av(c,'lg')}<div style="flex:1 1 200px"><label for="c-name">Nombre</label><input type="text" id="c-name" value="${esc(c.name)}" data-bind="char-name" autocomplete="off"></div></div>
   <div class="two"><div><label for="c-gender">Sexo</label><select id="c-gender" data-bind="char-gender">${Object.keys(GEN).map(k=>`<option value="${k}" ${c.gender===k?'selected':''}>${GEN[k]}</option>`).join('')}</select></div>
-  <label class="pick" style="display:inline-flex;margin:0"><span style="display:inline-flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;font:500 14px var(--font-body);color:var(--ink);background:var(--surface-2);border-radius:6px;padding:6px 10px"><input type="checkbox" data-bind="char-enabled" ${c.enabled?'checked':''}>Participa en la simulación</span></label></div></section>
+  <label class="pick" style="display:inline-flex;margin:0"><span style="display:inline-flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;font:500 14px var(--font-body);color:var(--ink);background:var(--surface-2);border-radius:6px;padding:6px 10px"><input type="checkbox" data-bind="char-enabled" ${c.enabled?'checked':''}>Participa en la simulación</span></label></div>
+  <div class="two"><div><label for="c-loy">Lealtad (0 a 100)</label><input type="number" id="c-loy" min="0" max="100" value="${c.loy}" data-bind="char-loy"></div>
+  <div><label for="c-emotion">Emoción inicial</label><select id="c-emotion" data-bind="char-emotion"><option value="">Ninguna</option>${P.emotions.map(m=>`<option value="${m.id}" ${c.emotion===m.id?'selected':''}>${esc((m.icon?m.icon+' ':'')+(m.name||'Sin nombre'))}</option>`).join('')}</select></div></div>
+  <p class="hint">La lealtad pesa en las traiciones: con poca lealtad, un personaje es más propenso a abandonar o traicionar a su equipo (si los eventos lo usan). El equipo se arma en la pestaña Equipos.</p></section>
   ${imagesSection(c)}
   <section class="card sec"><h3 class="h3">Inventario</h3>
   <div class="two"><div><label for="c-slots">Slots</label><input type="number" id="c-slots" min="0" max="99" value="${c.slots}" data-bind="char-slots"></div><span class="meter ${usedSlots(c)>c.slots?'bad':''}" id="slot-meter">${meterText(c)}</span></div>
@@ -232,6 +254,13 @@ function tagsFiltered(kind){
   const q=norm(ui.q[kind]);
   return P[kind].filter(i=>!q||norm(i.name).includes(q)||norm(i.cat).includes(q));
 }
+function tagFieldsHTML(kind,i){
+  const cat=`<div class="mini"><label>Categoría</label><input type="text" list="cats-${kind}" value="${esc(i.cat)}" data-bind="tag-cat" data-kind="${kind}" data-id="${i.id}" autocomplete="off"></div>`;
+  if(kind==='items') return `<div class="mini"><label>Tamaño</label><input type="number" min="0" value="${i.size}" data-bind="tag-size" data-id="${i.id}"></div>`+cat;
+  if(kind==='stats') return `<div class="mini"><label>Valor inicial</label><input type="number" step="any" value="${i.def}" data-bind="tag-def" data-id="${i.id}"></div>`;
+  if(kind==='emotions') return `<div class="mini"><label>Ícono</label><input type="text" style="width:80px" maxlength="8" value="${esc(i.icon)}" data-bind="tag-icon" data-id="${i.id}" autocomplete="off"></div><div class="mini"><label>Dura (días, 0 = no se pasa)</label><input type="number" min="0" value="${i.days}" data-bind="tag-days" data-id="${i.id}"></div>`;
+  return cat;
+}
 function tagRowsHTML(kind){
   if(!P[kind].length) return '<p class="empty">Todavía no hay nada acá. Agregá el primero arriba.</p>';
   const L=tagsFiltered(kind);
@@ -240,17 +269,19 @@ function tagRowsHTML(kind){
     const u=usage(kind,i.id);
     return `<div class="trow"><input type="text" value="${esc(i.name)}" data-bind="tag-name" data-kind="${kind}" data-id="${i.id}" aria-label="Nombre" autocomplete="off">
     <button type="button" class="x" data-act="tag-del" data-kind="${kind}" data-id="${i.id}" data-confirm="¿Eliminar? Tocá otra vez" aria-label="Eliminar">✕</button>
-    <div class="tfields">${kind==='items'?`<div class="mini"><label>Tamaño</label><input type="number" min="0" value="${i.size}" data-bind="tag-size" data-id="${i.id}"></div>`:''}${kind==='stats'?`<div class="mini"><label>Valor inicial</label><input type="number" step="any" value="${i.def}" data-bind="tag-def" data-id="${i.id}"></div>`:`<div class="mini"><label>Categoría</label><input type="text" list="cats-${kind}" value="${esc(i.cat)}" data-bind="tag-cat" data-kind="${kind}" data-id="${i.id}" autocomplete="off"></div>`}</div>
+    <div class="tfields">${tagFieldsHTML(kind,i)}</div>
     <div class="chips"><span class="chip">${plural(u.ch,'personaje','personajes')}</span><span class="chip">${plural(u.ev,'evento','eventos')}</span></div></div>`;
   }).join('')+'</div>';
 }
 function vTags(kind){
   const L=KL[kind];
-  const cats=kind==='stats'?[]:[...new Set(P[kind].map(i=>i.cat).filter(Boolean))].sort();
+  const cats=(kind==='items'||kind==='skills')?[...new Set(P[kind].map(i=>i.cat).filter(Boolean))].sort():[];
   const extra=kind==='items'
     ?`<div class="mini"><label for="new-size">Tamaño</label><input type="number" id="new-size" min="0" value="1"></div><div class="mini"><label for="new-cat">Categoría</label><input type="text" id="new-cat" list="cats-items" autocomplete="off"></div>`
     :kind==='skills'
     ?`<div class="mini"><label for="new-cat">Categoría</label><input type="text" id="new-cat" list="cats-skills" autocomplete="off"></div>`
+    :kind==='emotions'
+    ?`<div class="mini"><label for="new-icon">Ícono</label><input type="text" id="new-icon" style="width:80px" maxlength="8" autocomplete="off"></div><div class="mini"><label for="new-days">Dura (días)</label><input type="number" id="new-days" min="0" value="0"></div>`
     :`<div class="mini"><label for="new-def">Valor inicial</label><input type="number" id="new-def" value="5" step="any"></div>`;
   return `<div class="bar"><h2 class="h2">${L.title}</h2></div><p class="hint" style="margin-bottom:12px">${L.hint}</p>
   <div class="addrow"><div class="grow mini"><label for="new-name">Nombre</label><input type="text" id="new-name" placeholder="${L.ph}" data-enter="tag-add" data-kind="${kind}" autocomplete="off"></div>${extra}<button type="button" class="btn pri" data-act="tag-add" data-kind="${kind}">Agregar</button></div>
@@ -262,11 +293,11 @@ function vTags(kind){
 /* ======================= EVENTOS ======================= */
 function eventsFiltered(){
   const q=norm(ui.q.events);
-  return P.events.filter(e=>(!q||norm(e.text).includes(q))&&(!ui.evf||(ui.evf==='kill'?e.fx.some(f=>f.k==='kill'):issues(e).length>0)));
+  return P.events.filter(e=>(!q||norm(e.text).includes(q))&&(!ui.evf||(ui.evf==='kill'?allFx(e).some(f=>f.k==='kill'):issues(e).length>0)));
 }
 function evCard(e){
-  const iss=issues(e),kills=e.fx.some(f=>f.k==='kill'),n=countRules(e.cond);
-  return `<article class="card ev"><button type="button" class="evmain" data-act="ev-edit" data-id="${e.id}"><span class="evtext">${e.text.trim()?tkHTML(e.text):'<i>(sin texto)</i>'}</span><span class="chips"><span class="chip">${plural(e.roles.length,'participante','participantes')}</span><span class="chip">${plural(n,'regla','reglas')}</span><span class="chip">Frecuencia ${e.weight}</span>${kills?'<span class="chip bad">Elimina</span>':''}${iss.length?'<span class="chip warn">Revisar</span>':''}</span></button><button type="button" class="btn sm" data-act="ev-dup" data-id="${e.id}">Duplicar</button></article>`;
+  const iss=issues(e),kills=allFx(e).some(f=>f.k==='kill'),n=countRules(e.cond);
+  return `<article class="card ev"><button type="button" class="evmain" data-act="ev-edit" data-id="${e.id}"><span class="evtext">${e.text.trim()?tkHTML(e.text):'<i>(sin texto)</i>'}</span><span class="chips"><span class="chip">${plural(e.roles.length,'participante','participantes')}</span><span class="chip">${plural(n,'regla','reglas')}</span><span class="chip">Frecuencia ${e.weight}</span>${e.chance.mode!=='always'?'<span class="chip">Con probabilidad</span>':''}${kills?'<span class="chip bad">Elimina</span>':''}${iss.length?'<span class="chip warn">Revisar</span>':''}</span></button><button type="button" class="btn sm" data-act="ev-dup" data-id="${e.id}">Duplicar</button></article>`;
 }
 function eventsListHTML(){
   if(!P.events.length) return '<p class="empty">Todavía no hay eventos. Un evento es algo que le puede pasar a uno o más personajes en un día.</p>';
@@ -293,13 +324,14 @@ function valOpts(kind,cur){
 }
 function ruleRow(e,n,path){
   let extra='';
-  if(n.kind==='stat'||n.kind==='statvs') extra+=`<select data-bind="rule-op" data-path="${path}" aria-label="Comparación">${CMP.map(o=>`<option value="${o}" ${n.op===o?'selected':''}>${CMP_LBL[o]}</option>`).join('')}</select>`;
-  if(n.kind==='stat') extra+=`<input type="number" step="any" value="${n.num}" data-bind="rule-num" data-path="${path}" aria-label="Número">`;
-  if(n.kind==='statvs') extra+=`<select data-bind="rule-role2" data-path="${path}" aria-label="Comparar con">${roleOpts(e,n.role2)}</select>`;
+  if(RULE_NEEDS_CMP.includes(n.kind)) extra+=`<select data-bind="rule-op" data-path="${path}" aria-label="Comparación">${CMP.map(o=>`<option value="${o}" ${n.op===o?'selected':''}>${CMP_LBL[o]}</option>`).join('')}</select>`;
+  if(RULE_NEEDS_NUM.includes(n.kind)) extra+=`<input type="number" step="any" value="${n.num}" data-bind="rule-num" data-path="${path}" aria-label="Número">`;
+  if(RULE_NEEDS_ROLE2.includes(n.kind)) extra+=`<select data-bind="rule-role2" data-path="${path}" aria-label="Comparar con">${roleOpts(e,n.role2)}</select>`;
+  const val=NOVAL.includes(n.kind)?'':`<select data-bind="rule-val" data-path="${path}" aria-label="Valor">${valOpts(n.kind,n.val)}</select>`;
   return `<div class="rule"><button type="button" class="neg ${n.neg?'on':''}" data-act="rule-neg" data-path="${path}" aria-pressed="${n.neg}" title="Invertir esta regla">NO</button>
   <select data-bind="rule-role" data-path="${path}" aria-label="Participante">${roleOpts(e,n.role)}</select>
   <select data-bind="rule-kind" data-path="${path}" aria-label="Tipo de regla">${KINDS.map(k=>`<option value="${k}" ${n.kind===k?'selected':''}>${KIND_LBL[k]}</option>`).join('')}</select>
-  <select data-bind="rule-val" data-path="${path}" aria-label="Valor">${valOpts(n.kind,n.val)}</select>${extra}
+  ${val}${extra}
   <button type="button" class="x" data-act="node-del" data-path="${path}" aria-label="Quitar regla">✕</button></div>`;
 }
 function condHTML(e,n,path,depth){
@@ -309,22 +341,37 @@ function condHTML(e,n,path,depth){
   ${n.c.length?`<div class="grp-b">${n.c.map((ch,i)=>condHTML(e,ch,path?path+'.'+i:String(i),depth+1)).join('')}</div>`:''}
   <div class="acts"><button type="button" class="btn sm" data-act="add-rule" data-path="${path}">Agregar regla</button><button type="button" class="btn sm" data-act="add-group" data-path="${path}">Agregar grupo</button></div></div>`;
 }
-function fxHTML(e,f,i){
-  const m=FX[f.k];
-  let h=`<div class="fx"><select data-bind="fx-k" data-i="${i}" aria-label="Efecto">${Object.keys(FX).map(k=>`<option value="${k}" ${f.k===k?'selected':''}>${FX[k].label}</option>`).join('')}</select>`;
+/* Un efecto. L dice en qué lista vive: 'fx' (ocurre) o 'fxFail' (no sale bien). */
+function fxHTML(e,f,i,L){
+  const m=FX[f.k],da=`data-i="${i}" data-list="${L}"`;
+  const sel=(bind,label,body)=>`<select data-bind="${bind}" ${da} aria-label="${label}">${body}</select>`;
+  const roleSel=(bind,cur,label)=>sel(bind,label,roleOpts(e,cur));
+  const opt=(v,cur,txt)=>`<option value="${v}" ${String(cur)===String(v)?'selected':''}>${txt}</option>`;
+  let h=`<div class="fx">`+sel('fx-k','Efecto',Object.keys(FX).map(k=>opt(k,f.k,FX[k].label)).join(''));
   if(m.ref){
     const list=P[m.ref];
-    h+=`<select data-bind="fx-ref" data-i="${i}" aria-label="Elemento"><option value="" ${!f.ref?'selected':''}>Elegir…</option>${list.map(x=>`<option value="${x.id}" ${x.id===f.ref?'selected':''}>${esc(x.name||'Sin nombre')}</option>`).join('')}${f.ref&&!list.some(x=>x.id===f.ref)?`<option value="${esc(f.ref)}" selected>⚠ ya no existe</option>`:''}</select>`;
+    h+=sel('fx-ref','Elemento',`<option value="" ${!f.ref?'selected':''}>Elegir…</option>${list.map(x=>opt(x.id,f.ref,esc(x.name||'Sin nombre'))).join('')}${f.ref&&!list.some(x=>x.id===f.ref)?`<option value="${esc(f.ref)}" selected>⚠ ya no existe</option>`:''}`);
   }
+  const W=t=>`<span class="w">${t}</span>`;
   if(f.k==='kill'){
-    h+=`<select data-bind="fx-role" data-i="${i}" aria-label="Participante">${roleOpts(e,f.role)}</select><span class="w">por</span><select data-bind="fx-by" data-i="${i}" aria-label="Autor de la baja"><option value="" ${!f.by?'selected':''}>autor automático</option><option value="none" ${f.by==='none'?'selected':''}>nadie</option>${e.roles.map(r=>`<option value="${r.n}" ${f.by===r.n?'selected':''}>${r.n}</option>`).join('')}</select>`;
-  } else if(f.k==='stat'){
-    h+=`<span class="w">de</span><select data-bind="fx-role" data-i="${i}" aria-label="Participante">${roleOpts(e,f.role)}</select><select data-bind="fx-mode" data-i="${i}" aria-label="Modo"><option value="add" ${f.mode==='add'?'selected':''}>suma</option><option value="set" ${f.mode==='set'?'selected':''}>fija en</option></select><input type="number" step="any" value="${f.num}" data-bind="fx-num" data-i="${i}" aria-label="Número">`;
+    h+=roleSel('fx-role',f.role,'Participante')+W('por')+sel('fx-by','Autor de la baja',opt('',f.by,'autor automático')+opt('none',f.by,'nadie')+e.roles.map(r=>opt(r.n,f.by,r.n)).join(''));
+  } else if(f.k==='stat'||f.k==='loyalty'){
+    h+=W('de')+roleSel('fx-role',f.role,'Participante')+sel('fx-mode','Modo',opt('add',f.mode,'suma')+opt('set',f.mode,'fija en'))+`<input type="number" step="any" value="${f.num}" data-bind="fx-num" ${da} aria-label="Número">`;
+  } else if(f.k==='teamForm'){
+    h+=roleSel('fx-role',f.role,'Participante')+W('con')+roleSel('fx-by',f.by,'Segundo participante')+W('nombre')
+      +sel('fx-nm','Nombre del equipo',opt('any',f.nm,'preestablecido o generado')+opt('gen',f.nm,'generado')+opt('preset',f.nm,'preestablecido'))
+      +sel('fx-num','Liderazgo',opt(1,f.num>0?1:0,'lidera el primero')+opt(0,f.num>0?1:0,'sin líder'));
+  } else if(f.k==='teamJoin'){
+    h+=roleSel('fx-role',f.role,'Participante')+W('al equipo de')+roleSel('fx-by',f.by,'Participante del equipo');
+  } else if(f.k==='teamShare'){
+    h+=W('del equipo de')+roleSel('fx-role',f.role,'Participante')+sel('fx-num','Compartir',opt(1,f.num>0?1:0,'activado')+opt(0,f.num>0?1:0,'desactivado'));
   } else {
-    h+=`<span class="w">${m.prep}</span><select data-bind="fx-role" data-i="${i}" aria-label="Participante">${roleOpts(e,f.role)}</select>`;
+    h+=W(m.prep)+roleSel('fx-role',f.role,'Participante');
   }
-  return h+`<button type="button" class="x" data-act="fx-del" data-i="${i}" aria-label="Quitar efecto">✕</button></div>`;
+  return h+`<button type="button" class="x" data-act="fx-del" ${da} aria-label="Quitar efecto">✕</button></div>`;
 }
+function fxList(e,L){return e[L==='fxFail'?'fxFail':'fx'];}
+function newFx(e){return {k:'kill',role:e.roles.length>1?'Y':'X',ref:'',by:'',mode:'add',num:1,nm:'any'};}
 function vEvents(){
   if(ui.ev){const e=curEv();if(e)return vEventForm(e);ui.ev=null;}
   return `<div class="bar"><h2 class="h2">Eventos</h2><div class="acts"><button type="button" class="btn pri" data-act="ev-new">Nuevo evento</button></div></div>
@@ -332,6 +379,28 @@ function vEvents(){
   <select data-bind="ev-filter" aria-label="Filtrar"><option value="">Todos</option><option value="kill" ${ui.evf==='kill'?'selected':''}>Los que eliminan</option><option value="issues" ${ui.evf==='issues'?'selected':''}>Para revisar</option></select>
   <span class="hint" id="count">${countText('events')}</span></div>
   <div id="list">${eventsListHTML()}</div>`;
+}
+function chanceSection(e){
+  const c=e.chance,m=c.mode;
+  const hints={
+    always:'El evento ocurre siempre como está escrito.',
+    fixed:'Es el mismo porcentaje siempre.',
+    stat:'Gana más probabilidad quien tenga más de esa stat: X con 6 e Y con 2 da 75%. Lo que un personaje no tiene vale 0.',
+    team:'Cuanto más grande sea el equipo de X frente al de Y, más probabilidad. Quien no tiene equipo cuenta como uno solo (3 contra 1 da 75%).',
+    loyalty:'Con lealtad 20, X tiene 80% de probabilidad; con lealtad 90, solo 10%. Sirve para las traiciones.'
+  };
+  let h=`<section class="card sec"><h3 class="h3">Resultado</h3><p class="hint">Podés hacer que el evento tenga una probabilidad de «salir bien». Si no sale bien, pasa otra cosa (con su propio texto y efectos). El registro muestra la probabilidad usada.</p>
+  <div class="two"><div><label for="ch-mode">Probabilidad</label><select id="ch-mode" data-bind="ch-mode">${CHANCE_MODES.map(k=>`<option value="${k}" ${m===k?'selected':''}>${CHANCE_LBL[k]}</option>`).join('')}</select></div>`;
+  if(m==='fixed') h+=`<div><label for="ch-pct">Probabilidad (%)</label><input type="number" id="ch-pct" min="0" max="100" value="${c.pct}" data-bind="ch-pct"></div>`;
+  if(m==='stat') h+=`<div><label for="ch-stat">Stat</label><select id="ch-stat" data-bind="ch-stat"><option value="">Elegir…</option>${P.stats.map(s=>`<option value="${s.id}" ${c.stat===s.id?'selected':''}>${esc(s.name||'Sin nombre')}</option>`).join('')}${c.stat&&!P.stats.some(s=>s.id===c.stat)?`<option value="${esc(c.stat)}" selected>⚠ ya no existe</option>`:''}</select></div>`;
+  h+=`</div><p class="hint">${hints[m]}</p>`;
+  if(m!=='always'){
+    h+=`<div><label for="ev-fail">Texto si no sale bien</label><textarea id="ev-fail" rows="2" data-bind="ev-fail">${esc(e.failText)}</textarea></div>
+    <p class="hint">Efectos si no sale bien</p>
+    ${e.fxFail.length?e.fxFail.map((f,i)=>fxHTML(e,f,i,'fxFail')).join(''):'<p class="hint">Sin efectos: solo se cuenta lo que pasó.</p>'}
+    <div><button type="button" class="btn sm" data-act="fx-add" data-list="fxFail">Agregar efecto</button></div>`;
+  }
+  return h+'</section>';
 }
 function vEventForm(e){
   const iss=issues(e);
@@ -345,20 +414,33 @@ function vEventForm(e){
   ${e.roles.map((r,i)=>`<div class="rrow"><span class="rl">${r.n}</span>${i===0?'<span class="hint">Actúa · vivo</span>':`<select data-bind="role-req" data-i="${i}" aria-label="Estado de ${r.n}">${REQ.map(q=>`<option value="${q[0]}" ${r.req===q[0]?'selected':''}>${q[1]}</option>`).join('')}</select>`}<input type="text" list="tags" value="${esc(r.look)}" placeholder="imagen: principal" data-bind="role-look" data-i="${i}" aria-label="Etiqueta de imagen de ${r.n}" autocomplete="off">${(i===e.roles.length-1&&i>0)?`<button type="button" class="x" data-act="role-del" aria-label="Quitar ${r.n}">✕</button>`:''}</div>`).join('')}
   ${e.roles.length<4?'<div><button type="button" class="btn sm" data-act="role-add">Agregar participante</button></div>':''}</section>
   <section class="card sec"><h3 class="h3">Condiciones</h3><p class="hint">El evento solo puede ocurrir si se cumplen. Combiná reglas con grupos Y, O y NO, y anidá grupos dentro de grupos. Una stat que el personaje no tiene vale 0.</p>${condHTML(e,e.cond,'',0)}</section>
-  <section class="card sec"><h3 class="h3">Efectos</h3><p class="hint">Lo que cambia cuando ocurre. Si un objeto no entra en los slots o el personaje no tiene la stat, ese efecto no se aplica y queda una nota en el registro.</p>
-  ${e.fx.length?e.fx.map((f,i)=>fxHTML(e,f,i)).join(''):'<p class="hint">Sin efectos: el evento es solo una escena.</p>'}
-  <div><button type="button" class="btn sm" data-act="fx-add">Agregar efecto</button></div></section>
+  <section class="card sec"><h3 class="h3">Efectos</h3><p class="hint">Lo que cambia cuando ocurre. Si un objeto no entra en los slots, el personaje no tiene la stat o no hay equipo para el efecto, ese efecto no se aplica y queda una nota en el registro.</p>
+  ${e.fx.length?e.fx.map((f,i)=>fxHTML(e,f,i,'fx')).join(''):'<p class="hint">Sin efectos: el evento es solo una escena.</p>'}
+  <div><button type="button" class="btn sm" data-act="fx-add" data-list="fx">Agregar efecto</button></div></section>
+  ${chanceSection(e)}
   <section class="card sec"><h3 class="h3">Frecuencia</h3><div><input type="range" id="ev-weight" min="1" max="10" value="${e.weight}" data-bind="ev-weight" aria-label="Frecuencia"> <output id="ev-w" class="chip">${e.weight}</output></div><p class="hint">Más alta significa que aparece más seguido cuando puede ocurrir.</p></section>
   <div class="acts"><button type="button" class="btn pri" data-act="ev-back">Listo</button></div>`;
 }
 
 /* ======================= SIMULACIÓN ======================= */
 function ensureSim(){if(!S)S=newSim();return S;}
+const emoOf=c=>c.emotion?(P.emotions.find(m=>m.id===c.emotion)||null):null;
+const emoTag=c=>{const m=emoOf(c);return m?` <span class="emo" title="${esc(m.name)}">${esc(m.icon||m.name)}</span>`:'';};
 function rosterListHTML(s){
   const q=norm(ui.q.roster);
   const L=s.chars.filter(c=>(!q||norm(c.name).includes(q))&&(ui.simFilter==='all'||(ui.simFilter==='alive'?c.alive:!c.alive)));
   if(!L.length) return '<p class="hint">Sin resultados.</p>';
-  return '<ul>'+L.map(c=>`<li><button type="button" class="ro ${c.alive?'':'out'} ${ui.simSel===c.id?'on':''}" data-act="sim-sel" data-id="${c.id}">${av(c)}<div><b>${esc(c.name)}</b><small>${c.kills?plural(c.kills,'baja','bajas')+' · ':''}${usedSlots(c)}/${c.slots} slots</small></div><span class="st">${c.alive?'VIVO':'BAJA'}</span></button></li>`).join('')+'</ul>';
+  return '<ul>'+L.map(c=>{
+    const t=teamOfIn(s,c);
+    return `<li><button type="button" class="ro ${c.alive?'':'out'} ${ui.simSel===c.id?'on':''}" data-act="sim-sel" data-id="${c.id}">${av(c)}<div><b>${esc(c.name)}${emoTag(c)}</b><small>${c.kills?plural(c.kills,'baja','bajas')+' · ':''}${usedSlots(c)}/${c.slots} slots${t?' · '+esc(t.name):''}</small></div><span class="st">${c.alive?'VIVO':'BAJA'}</span></button></li>`;
+  }).join('')+'</ul>';
+}
+function teamsSideHTML(s){
+  if(!s.teams.length) return '';
+  return `<section class="card"><h3 class="h3">Equipos</h3><ul class="tlist">${s.teams.map(t=>{
+    const mem=teamMatesIn(s,t),ld=mem.find(m=>m.id===t.leader);
+    return `<li><b>${esc(t.name)}</b><div class="stack">${mem.slice(0,6).map(m=>avS(m.name,lookFor(m,''),'sm')).join('')}</div><small>${plural(mem.length,'miembro','miembros')}${ld?' · Líder: '+esc(ld.name):' · Sin líder'}${t.share?' · Inventario compartido':''}</small></li>`;
+  }).join('')}</ul></section>`;
 }
 function simDetail(s){
   const c=s.chars.find(x=>x.id===ui.simSel);
@@ -366,8 +448,11 @@ function simDetail(s){
   const items=[...c.items].map(id=>nameOf(P.items,id)).filter(Boolean);
   const skills=[...c.skills].map(id=>nameOf(P.skills,id)).filter(Boolean);
   const stats=Object.keys(c.stats).map(id=>({n:nameOf(P.stats,id),v:c.stats[id]})).filter(x=>x.n);
+  const t=teamOfIn(s,c),em=emoOf(c);
   return `<section class="card detail"><div class="dhead">${av(c,'lg')}<div><h3 class="h3">${esc(c.name)}</h3><span class="st ${c.alive?'':'out'}">${c.alive?'VIVO':'BAJA'}</span> <span class="hint">${GEN[c.gender]}</span></div><button type="button" class="x" data-act="sim-sel" data-id="" aria-label="Cerrar">✕</button></div>
-  <dl><div><dt>Stats</dt><dd>${stats.length?stats.map(x=>`${esc(x.n)} <b>${x.v}</b>`).join(' · '):'<span class="hint">Ninguna</span>'}</dd></div>
+  <dl><div><dt>Equipo</dt><dd>${t?esc(t.name)+(t.leader===c.id?' (líder)':''):'<span class="hint">Sin equipo</span>'}</dd></div>
+  <div><dt>Ánimo</dt><dd>Lealtad <b>${Math.round(c.loy)}</b> · ${em?esc((em.icon?em.icon+' ':'')+em.name):'<span class="hint">sin emoción</span>'}</dd></div>
+  <div><dt>Stats</dt><dd>${stats.length?stats.map(x=>`${esc(x.n)} <b>${x.v}</b>`).join(' · '):'<span class="hint">Ninguna</span>'}</dd></div>
   <div><dt>Inventario (${usedSlots(c)}/${c.slots})</dt><dd>${items.length?esc(items.join(', ')):'<span class="hint">Vacío</span>'}</dd></div>
   <div><dt>Habilidades</dt><dd>${skills.length?esc(skills.join(', ')):'<span class="hint">Ninguna</span>'}</dd></div>
   <div><dt>Bajas</dt><dd>${c.kills?esc(c.victims.join(', ')):'<span class="hint">Ninguna</span>'}</dd></div>
@@ -382,13 +467,13 @@ function optsHTML(en,dis){
   <div><p>Participan <b>${en}</b> de ${P.chars.length} personajes${dis?` (${dis} deshabilitados)`:''}.</p><p class="hint">Si hay demasiados, sacá algunos al azar para que la partida sea más corta. Queda guardado en la ficha de cada personaje.</p></div>
   <div class="row"><label for="shuffle-n" style="margin:0">Cantidad</label><input type="number" id="shuffle-n" min="0" value="${ui.shuffleN}" data-bind="shuffle-n"><button type="button" class="btn sm" data-act="shuffle-off">Deshabilitar al azar</button><button type="button" class="btn sm" data-act="shuffle-keep">Dejar solo esa cantidad</button><button type="button" class="btn sm" data-act="enable-all">Habilitar todos</button></div>
   <div class="row"><label class="check"><input type="checkbox" data-bind="chaos-on" ${ui.chaos?'checked':''}>Modo caos</label><input type="range" min="1" max="10" value="${ui.chaosLvl}" data-bind="chaos-lvl" aria-label="Intensidad del caos"><output id="chaos-out" class="chip">${ui.chaosLvl}</output></div>
-  <p class="hint">Cada día reordena al azar stats, objetos y habilidades de los vivos, y algunos personajes viven eventos sin cumplir sus condiciones. Más intensidad, más locura.</p></div></details>`;
+  <p class="hint">Cada día reordena al azar stats, objetos, habilidades, lealtad y emociones de los vivos, y algunos personajes viven eventos sin cumplir sus condiciones. Más intensidad, más locura.</p></div></details>`;
 }
 function vSim(){
   const en=P.chars.filter(c=>c.enabled).length,dis=P.chars.length-en;
   if(en<2) return `<div class="note warn"><b>Hacen falta al menos 2 personajes habilitados.</b> Hay ${en} de ${P.chars.length}. Creá o habilitá personajes en la pestaña Personajes.</div>`+optsHTML(en,dis);
   const s=ensureSim(),alive=s.chars.filter(c=>c.alive);
-  const noKill=!P.events.some(e=>e.fx.some(f=>f.k==='kill'));
+  const noKill=!P.events.some(e=>allFx(e).some(f=>f.k==='kill'));
   let h='';
   if(noKill) h+='<div class="note warn"><b>Ningún evento elimina personajes.</b> La partida no va a terminar sola. Agregá un efecto «Elimina a» en algún evento.</div>';
   h+=`<section class="card ctl"><div class="dayno"><span class="lbl">Día</span><b>${pad(s.day)}</b></div><div class="cnt"><b>${alive.length}</b>en pie de ${s.chars.length}</div><div class="acts"><button type="button" class="btn pri" data-act="sim-next" ${s.over?'disabled':''}>Siguiente día</button><button type="button" class="btn" data-act="sim-all" ${s.over?'disabled':''}>Hasta el final</button><button type="button" class="btn ${ui.summary?'on':''}" data-act="sim-summary">Resumen</button><button type="button" class="btn" data-act="sim-reset">Reiniciar</button></div></section>`;
@@ -399,8 +484,8 @@ function vSim(){
   }
   if(s.capped) h+='<div class="note warn"><b>Se frenó en el día 200.</b> Revisá que haya eventos que eliminen personajes.</div>';
   if(s.over||ui.summary) h+=summaryHTML(s);
-  h+=`<div class="simgrid"><aside class="side">${simDetail(s)}<section class="card roster"><h3 class="h3">Elenco</h3><div class="fbar"><input type="search" placeholder="Buscar…" value="${esc(ui.q.roster)}" data-bind="q" data-k="roster" aria-label="Buscar en el elenco"><select data-bind="sim-filter" aria-label="Mostrar"><option value="all">Todos</option><option value="alive" ${ui.simFilter==='alive'?'selected':''}>Vivos</option><option value="dead" ${ui.simFilter==='dead'?'selected':''}>Bajas</option></select></div><div id="rlist">${rosterListHTML(s)}</div></section></aside>
-  <section class="log" aria-label="Registro de días">${s.days.length?s.days.slice().reverse().map(d=>`<article class="day"><div class="day-h"><h3>Día ${pad(d.n)}</h3><span>${plural(d.alive,'persona en pie','personas en pie')}</span></div>${d.chaos?`<div class="chaosnote">Caos: ${plural(d.chaos.shaken,'personaje reordenado','personajes reordenados')} · ${plural(d.chaos.wild,'evento sin condiciones','eventos sin condiciones')}</div>`:''}${d.entries.map(en=>`<div class="en ${en.deaths.length?'dead':''}"><div class="stack">${en.who.slice(0,3).map(w=>avS(w.c.name,w.src,'sm')).join('')}</div><p>${en.html}${en.deaths.map(c=>`<span class="baja">BAJA · ${esc(c.name)}</span>`).join('')}${en.notes.map(n=>`<span class="nt">${esc(n)}</span>`).join('')}</p></div>`).join('')}</article>`).join(''):'<div class="card"><h3 class="h3">Listos para empezar</h3><p class="hint">Todo el elenco está vivo. Cada día, cada personaje vivo vive un evento que cumpla sus condiciones. Tocá «Siguiente día» para empezar.</p></div>'}</section></div>`;
+  h+=`<div class="simgrid"><aside class="side">${simDetail(s)}${teamsSideHTML(s)}<section class="card roster"><h3 class="h3">Elenco</h3><div class="fbar"><input type="search" placeholder="Buscar…" value="${esc(ui.q.roster)}" data-bind="q" data-k="roster" aria-label="Buscar en el elenco"><select data-bind="sim-filter" aria-label="Mostrar"><option value="all">Todos</option><option value="alive" ${ui.simFilter==='alive'?'selected':''}>Vivos</option><option value="dead" ${ui.simFilter==='dead'?'selected':''}>Bajas</option></select></div><div id="rlist">${rosterListHTML(s)}</div></section></aside>
+  <section class="log" aria-label="Registro de días">${s.days.length?s.days.slice().reverse().map(d=>`<article class="day"><div class="day-h"><h3>Día ${pad(d.n)}</h3><span>${plural(d.alive,'persona en pie','personas en pie')}</span></div>${d.chaos?`<div class="chaosnote">Caos: ${plural(d.chaos.shaken,'personaje reordenado','personajes reordenados')} · ${plural(d.chaos.wild,'evento sin condiciones','eventos sin condiciones')}</div>`:''}${d.entries.map(en=>`<div class="en ${en.deaths.length?'dead':''}"><div class="stack">${en.who.slice(0,3).map(w=>avS(w.c.name,w.src,'sm')).join('')}</div><p>${en.html}${en.deaths.map(c=>`<span class="baja">BAJA · ${esc(c.name)}</span>`).join('')}${en.chance!=null?`<span class="nt">Probabilidad de éxito: ${en.chance}%</span>`:''}${en.notes.map(n=>`<span class="nt">${esc(n)}</span>`).join('')}</p></div>`).join('')}</article>`).join(''):'<div class="card"><h3 class="h3">Listos para empezar</h3><p class="hint">Todo el elenco está vivo. Cada día, cada personaje vivo vive un evento que cumpla sus condiciones. Tocá «Siguiente día» para empezar.</p></div>'}</section></div>`;
   return h;
 }
 
@@ -439,7 +524,7 @@ async function copyProject(){
   catch(e){showExportText(json,'No se pudo copiar solo. Seleccioná el texto y copialo.');}
 }
 function replaceProject(p){
-  P=p;S=null;ui.char=ui.ev=ui.simSel=null;ui.sel.clear();ui.exportText='';ui.dataMsg='';ui.importBuf='';
+  P=p;S=null;ui.char=ui.ev=ui.simSel=ui.team=null;ui.nameSamples=[];ui.sel.clear();ui.exportText='';ui.dataMsg='';ui.importBuf='';
   saveNow().then(gcBlobs);render();
 }
 
@@ -449,10 +534,12 @@ function parentOf(root,path){const p=path.split('.');const idx=+p.pop();return {
 function defaultVal(kind){
   const L=refListOf(kind);
   if(L) return P[L][0]?P[L][0].id:'';
+  if(NOVAL.includes(kind)) return '';
   return kind==='gender'?'f':'alive';
 }
 
 /* ======================= ACCIONES (botones) ======================= */
+const blankChar=name=>({id:uid(),name,gender:'o',enabled:true,slots:DEFAULT_SLOTS,imgs:[],items:[],skills:[],stats:{},loy:50,emotion:''});
 const selChars=()=>P.chars.filter(c=>ui.sel.has(c.id));
 function pickBulk(kind,on,cat){
   const c=curChar();if(!c)return;
@@ -474,6 +561,7 @@ function tagAdd(kind){
   const o={id:uid(),name};
   if(kind==='items'){const v=parseInt($('#new-size').value,10);o.size=isNaN(v)?1:Math.max(0,v);o.cat=$('#new-cat').value.trim();}
   else if(kind==='skills'){o.cat=$('#new-cat').value.trim();}
+  else if(kind==='emotions'){const v=parseInt($('#new-days').value,10);o.icon=$('#new-icon').value.trim();o.days=isNaN(v)?0:Math.max(0,v);}
   else{const v=parseFloat($('#new-def').value);o.def=isFinite(v)?v:5;}
   P[kind].push(o);structural();
   const f=$('#new-name');if(f)f.focus();
@@ -482,12 +570,12 @@ function tagAdd(kind){
 const ACT={
   tab(b){
     const k=b.dataset.tab;
-    if(ui.tab===k){ui.char=null;ui.ev=null;}
+    if(ui.tab===k){ui.char=null;ui.ev=null;ui.team=null;}
     ui.tab=k;render();
   },
   /* personajes */
   'char-new'(){
-    const c={id:uid(),name:'',gender:'o',enabled:true,slots:DEFAULT_SLOTS,imgs:[],items:[],skills:[],stats:{}};
+    const c=blankChar('');
     P.chars.push(c);ui.char=c.id;structural();window.scrollTo(0,0);
     const f=$('#c-name');if(f)f.focus();
   },
@@ -511,7 +599,7 @@ const ACT={
   'bulk-add'(){
     const names=$('#bulk-text').value.split('\n').map(s=>s.trim()).filter(Boolean).slice(0,300);
     if(!names.length)return;
-    names.forEach(n=>P.chars.push({id:uid(),name:n,gender:'o',enabled:true,slots:DEFAULT_SLOTS,imgs:[],items:[],skills:[],stats:{}}));
+    names.forEach(n=>P.chars.push(blankChar(n)));
     ui.bulk=false;structural();toast(plural(names.length,'personaje creado','personajes creados'));
   },
   'img-url'(){
@@ -571,13 +659,17 @@ const ACT={
   'tag-del'(b){
     const kind=b.dataset.kind,id=b.dataset.id,u=usage(kind,id);
     P[kind]=P[kind].filter(i=>i.id!==id);
-    P.chars.forEach(c=>{if(kind==='stats')delete c.stats[id];else c[kind]=c[kind].filter(x=>x!==id);});
+    P.chars.forEach(c=>{
+      if(kind==='stats')delete c.stats[id];
+      else if(kind==='emotions'){if(c.emotion===id)c.emotion='';}
+      else c[kind]=c[kind].filter(x=>x!==id);
+    });
     structural();
     toast(u.ev?('Eliminado. '+plural(u.ev,'evento quedó','eventos quedaron')+' con una referencia rota.'):'Eliminado');
   },
   /* eventos */
   'ev-new'(){
-    const e={id:uid(),text:'',weight:3,roles:[{n:'X',req:'alive',look:''}],cond:emptyCond(),fx:[]};
+    const e={id:uid(),text:'',weight:3,roles:[{n:'X',req:'alive',look:''}],cond:emptyCond(),fx:[],chance:{mode:'always',pct:50,stat:''},failText:'',fxFail:[]};
     P.events.push(e);ui.ev=e.id;structural();window.scrollTo(0,0);
     const f=$('#ev-text');if(f)f.focus();
   },
@@ -606,8 +698,8 @@ const ACT={
   'add-group'(b){const e=curEv(),g=nodeAt(e.cond,b.dataset.path);g.c.push({t:'g',op:'or',c:[]});structural();},
   'node-del'(b){const e=curEv(),q=parentOf(e.cond,b.dataset.path);q.parent.c.splice(q.idx,1);structural();},
   'rule-neg'(b){const e=curEv(),r=nodeAt(e.cond,b.dataset.path);r.neg=!r.neg;structural();},
-  'fx-add'(){const e=curEv();e.fx.push({k:'kill',role:e.roles.length>1?'Y':'X',ref:'',by:'',mode:'add',num:1});structural();},
-  'fx-del'(b){const e=curEv();e.fx.splice(+b.dataset.i,1);structural();},
+  'fx-add'(b){const e=curEv();fxList(e,b.dataset.list).push(newFx(e));structural();},
+  'fx-del'(b){const e=curEv();fxList(e,b.dataset.list).splice(+b.dataset.i,1);structural();},
   /* simulación */
   'sim-next'(){ensureSim();playDay(S,{chaos:ui.chaos?ui.chaosLvl:0});render();},
   'sim-all'(){
@@ -641,7 +733,7 @@ const ACT={
       replaceProject(p);ui.tab='chars';render();toast('Proyecto importado');
     }catch(e){ui.dataMsg='No se pudo leer ese contenido. Tiene que venir de «Exportar» en este simulador.';render();}
   },
-  'data-blank'(){replaceProject(normalize({v:2}));ui.tab='chars';render();toast('Proyecto vacío');},
+  'data-blank'(){replaceProject(normalize({v:3}));ui.tab='chars';render();toast('Proyecto vacío');},
   'data-sample'(){replaceProject(sampleProject());toast('Ejemplo cargado');}
 };
 
@@ -698,12 +790,27 @@ const BIND={
   'rule-op'(t){const e=curEv();nodeAt(e.cond,t.dataset.path).op=t.value;structural();},
   'rule-num'(t){const e=curEv();const v=parseFloat(t.value);if(isFinite(v)){nodeAt(e.cond,t.dataset.path).num=v;touch();}},
   'rule-role2'(t){const e=curEv();nodeAt(e.cond,t.dataset.path).role2=t.value;structural();},
-  'fx-k'(t){const e=curEv(),f=e.fx[+t.dataset.i];f.k=t.value;f.ref='';f.by='';structural();},
-  'fx-ref'(t){const e=curEv();e.fx[+t.dataset.i].ref=t.value;structural();},
-  'fx-role'(t){const e=curEv();e.fx[+t.dataset.i].role=t.value;structural();},
-  'fx-by'(t){const e=curEv();e.fx[+t.dataset.i].by=t.value;structural();},
-  'fx-mode'(t){const e=curEv();e.fx[+t.dataset.i].mode=t.value;touch();},
-  'fx-num'(t){const e=curEv();const v=parseFloat(t.value);if(isFinite(v)){e.fx[+t.dataset.i].num=v;touch();}},
+  'fx-k'(t){
+    const e=curEv(),f=fxList(e,t.dataset.list)[+t.dataset.i];
+    f.k=t.value;f.ref='';f.by='';
+    if(TEAM_FX.includes(f.k)) f.by=(e.roles.map(r=>r.n).find(n=>n!==f.role))||'';   // el segundo participante
+    if(f.k==='teamForm'||f.k==='teamShare') f.num=1;
+    structural();
+  },
+  'fx-ref'(t){const e=curEv();fxList(e,t.dataset.list)[+t.dataset.i].ref=t.value;structural();},
+  'fx-role'(t){const e=curEv();fxList(e,t.dataset.list)[+t.dataset.i].role=t.value;structural();},
+  'fx-by'(t){const e=curEv();fxList(e,t.dataset.list)[+t.dataset.i].by=t.value;structural();},
+  'fx-mode'(t){const e=curEv();fxList(e,t.dataset.list)[+t.dataset.i].mode=t.value;touch();},
+  'fx-nm'(t){const e=curEv();fxList(e,t.dataset.list)[+t.dataset.i].nm=t.value;touch();},
+  'fx-num'(t){const e=curEv();const v=parseFloat(t.value);if(isFinite(v)){fxList(e,t.dataset.list)[+t.dataset.i].num=v;touch();}},
+  'ch-mode'(t){const e=curEv();e.chance.mode=t.value;structural();},
+  'ch-pct'(t){const e=curEv();const v=parseFloat(t.value);if(isFinite(v)){e.chance.pct=Math.min(100,Math.max(0,v));touch();}},
+  'ch-stat'(t){const e=curEv();e.chance.stat=t.value;structural();},
+  'ev-fail'(t){const e=curEv();if(e){e.failText=t.value;touch();}},
+  'char-loy'(t){const c=curChar();const v=parseFloat(t.value);if(c&&isFinite(v)){c.loy=Math.min(100,Math.max(0,v));touch();}},
+  'char-emotion'(t){const c=curChar();if(c){c.emotion=t.value;touch();}},
+  'tag-icon'(t){const x=P.emotions.find(i=>i.id===t.dataset.id);if(x){x.icon=t.value.trim();touch();}},
+  'tag-days'(t){const x=P.emotions.find(i=>i.id===t.dataset.id);const v=parseInt(t.value,10);if(x&&!isNaN(v)){x.days=Math.max(0,v);touch();}},
   'shuffle-n'(t){ui.shuffleN=t.value;},
   'chaos-on'(t){ui.chaos=t.checked;},
   'chaos-lvl'(t){ui.chaosLvl=+t.value;const o=$('#chaos-out');if(o)o.textContent=t.value;},
@@ -741,7 +848,7 @@ document.addEventListener('keydown',e=>{
   const t=e.target;
   if(e.key==='Enter'&&t.dataset&&t.dataset.enter){
     e.preventDefault();
-    const sel=t.dataset.enter==='tag-add'?`button[data-act="tag-add"][data-kind="${t.dataset.kind}"]`:`button[data-act="${t.dataset.enter}"]`;
+    const sel=t.dataset.kind?`button[data-act="${t.dataset.enter}"][data-kind="${t.dataset.kind}"]`:`button[data-act="${t.dataset.enter}"]`;
     const b=app.querySelector(sel);if(b)b.click();
   }
 });
