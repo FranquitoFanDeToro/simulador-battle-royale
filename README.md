@@ -28,7 +28,16 @@ Hacé doble clic en `index.html`. No hace falta instalar nada.
 - **Probabilidad de éxito** en los eventos (fija, por stat, por tamaño de equipo o por lealtad), con texto y efectos propios si no sale bien.
 - Las reglas nuevas se arman igual que las anteriores: equipo, líder, mismo equipo, tamaño de equipo, lealtad, emoción.
 
-Todavía no existen: el editor visual de bloques, los escenarios, «dividirse para buscar recursos» y los estados alterados.
+## Novedades de la etapa 3: editor de bloques
+
+Al abrir un evento, la pantalla muestra por defecto el **Programa del evento**: SI (condiciones) → ENTONCES (efectos), armado con bloques de colores.
+
+- Agregá bloques con **＋ Agregar bloque…** (reglas o grupos Y / O / NO) y **＋ Agregar efecto…**.
+- Arrastralos desde **⠿** (con mouse o con el dedo) a otro lugar, a otro grupo o, para los efectos, entre «ocurre» y «no sale bien». Alternativa sin arrastrar: **▲ ▼**. También hay **⧉** duplicar y **✕** quitar.
+- Los grupos se pueden anidar sin límite; un grupo no se puede meter dentro de sí mismo.
+- El botón **Bloques / Formulario** cambia de vista: las dos editan los mismos datos y no se pierde nada. Se recuerda tu elección.
+
+Todavía no existen: los escenarios, «dividirse para buscar recursos» y los estados alterados.
 
 ## Qué hay en cada archivo
 
@@ -40,5 +49,6 @@ Todavía no existen: el editor visual de bloques, los escenarios, «dividirse pa
 | `js/equipos.js` | Reglas de equipos y generador de nombres. |
 | `js/almacen.js` | Guardado en el navegador, imágenes, exportar e importar. |
 | `js/interfaz.js` | Pantallas y botones. |
+| `js/bloques.js` | Editor visual de bloques (arrastrar, anidar, colores). |
 | `js/interfaz-equipos.js` | Pantallas de equipos y vocabulario. |
 | `js/inicio.js` | Arranque. |

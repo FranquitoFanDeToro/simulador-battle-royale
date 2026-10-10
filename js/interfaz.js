@@ -322,17 +322,19 @@ function valOpts(kind,cur){
   if(cur&&!opts.some(o=>o[0]===cur)) h=`<option value="${esc(cur)}" selected>⚠ ya no existe</option>`+h;
   return h;
 }
-function ruleRow(e,n,path){
+function ruleControls(e,n,path){
   let extra='';
   if(RULE_NEEDS_CMP.includes(n.kind)) extra+=`<select data-bind="rule-op" data-path="${path}" aria-label="Comparación">${CMP.map(o=>`<option value="${o}" ${n.op===o?'selected':''}>${CMP_LBL[o]}</option>`).join('')}</select>`;
   if(RULE_NEEDS_NUM.includes(n.kind)) extra+=`<input type="number" step="any" value="${n.num}" data-bind="rule-num" data-path="${path}" aria-label="Número">`;
   if(RULE_NEEDS_ROLE2.includes(n.kind)) extra+=`<select data-bind="rule-role2" data-path="${path}" aria-label="Comparar con">${roleOpts(e,n.role2)}</select>`;
   const val=NOVAL.includes(n.kind)?'':`<select data-bind="rule-val" data-path="${path}" aria-label="Valor">${valOpts(n.kind,n.val)}</select>`;
-  return `<div class="rule"><button type="button" class="neg ${n.neg?'on':''}" data-act="rule-neg" data-path="${path}" aria-pressed="${n.neg}" title="Invertir esta regla">NO</button>
+  return `<button type="button" class="neg ${n.neg?'on':''}" data-act="rule-neg" data-path="${path}" aria-pressed="${n.neg}" title="Invertir esta regla">NO</button>
   <select data-bind="rule-role" data-path="${path}" aria-label="Participante">${roleOpts(e,n.role)}</select>
   <select data-bind="rule-kind" data-path="${path}" aria-label="Tipo de regla">${KINDS.map(k=>`<option value="${k}" ${n.kind===k?'selected':''}>${KIND_LBL[k]}</option>`).join('')}</select>
-  ${val}${extra}
-  <button type="button" class="x" data-act="node-del" data-path="${path}" aria-label="Quitar regla">✕</button></div>`;
+  ${val}${extra}`;
+}
+function ruleRow(e,n,path){
+  return `<div class="rule">${ruleControls(e,n,path)}<button type="button" class="x" data-act="node-del" data-path="${path}" aria-label="Quitar regla">✕</button></div>`;
 }
 function condHTML(e,n,path,depth){
   if(n.t!=='g') return ruleRow(e,n,path);
@@ -342,12 +344,12 @@ function condHTML(e,n,path,depth){
   <div class="acts"><button type="button" class="btn sm" data-act="add-rule" data-path="${path}">Agregar regla</button><button type="button" class="btn sm" data-act="add-group" data-path="${path}">Agregar grupo</button></div></div>`;
 }
 /* Un efecto. L dice en qué lista vive: 'fx' (ocurre) o 'fxFail' (no sale bien). */
-function fxHTML(e,f,i,L){
+function fxControls(e,f,i,L){
   const m=FX[f.k],da=`data-i="${i}" data-list="${L}"`;
   const sel=(bind,label,body)=>`<select data-bind="${bind}" ${da} aria-label="${label}">${body}</select>`;
   const roleSel=(bind,cur,label)=>sel(bind,label,roleOpts(e,cur));
   const opt=(v,cur,txt)=>`<option value="${v}" ${String(cur)===String(v)?'selected':''}>${txt}</option>`;
-  let h=`<div class="fx">`+sel('fx-k','Efecto',Object.keys(FX).map(k=>opt(k,f.k,FX[k].label)).join(''));
+  let h=sel('fx-k','Efecto',Object.keys(FX).map(k=>opt(k,f.k,FX[k].label)).join(''));
   if(m.ref){
     const list=P[m.ref];
     h+=sel('fx-ref','Elemento',`<option value="" ${!f.ref?'selected':''}>Elegir…</option>${list.map(x=>opt(x.id,f.ref,esc(x.name||'Sin nombre'))).join('')}${f.ref&&!list.some(x=>x.id===f.ref)?`<option value="${esc(f.ref)}" selected>⚠ ya no existe</option>`:''}`);
@@ -368,10 +370,23 @@ function fxHTML(e,f,i,L){
   } else {
     h+=W(m.prep)+roleSel('fx-role',f.role,'Participante');
   }
-  return h+`<button type="button" class="x" data-act="fx-del" ${da} aria-label="Quitar efecto">✕</button></div>`;
+  return h;
+}
+function fxHTML(e,f,i,L){
+  return `<div class="fx">${fxControls(e,f,i,L)}<button type="button" class="x" data-act="fx-del" data-i="${i}" data-list="${L}" aria-label="Quitar efecto">✕</button></div>`;
 }
 function fxList(e,L){return e[L==='fxFail'?'fxFail':'fx'];}
 function newFx(e){return {k:'kill',role:e.roles.length>1?'Y':'X',ref:'',by:'',mode:'add',num:1,nm:'any'};}
+function setFxKind(e,f,k){
+  f.k=k;f.ref='';f.by='';
+  if(TEAM_FX.includes(k)) f.by=(e.roles.map(r=>r.n).find(n=>n!==f.role))||'';   // el segundo participante
+  if(k==='teamForm'||k==='teamShare') f.num=1;
+}
+function setRuleKind(e,r,kind){
+  r.kind=kind;r.val=defaultVal(kind);r.op='>=';r.num=1;
+  r.role2=e.roles.map(x=>x.n).find(n=>n!==r.role)||'Y';
+}
+function newRule(e){return {t:'r',neg:false,role:'X',kind:'item',val:defaultVal('item'),op:'>=',num:1,role2:e.roles[1]?e.roles[1].n:'X'};}
 function vEvents(){
   if(ui.ev){const e=curEv();if(e)return vEventForm(e);ui.ev=null;}
   return `<div class="bar"><h2 class="h2">Eventos</h2><div class="acts"><button type="button" class="btn pri" data-act="ev-new">Nuevo evento</button></div></div>
@@ -380,7 +395,7 @@ function vEvents(){
   <span class="hint" id="count">${countText('events')}</span></div>
   <div id="list">${eventsListHTML()}</div>`;
 }
-function chanceSection(e){
+function chanceSection(e,blocks){
   const c=e.chance,m=c.mode;
   const hints={
     always:'El evento ocurre siempre como está escrito.',
@@ -397,8 +412,8 @@ function chanceSection(e){
   if(m!=='always'){
     h+=`<div><label for="ev-fail">Texto si no sale bien</label><textarea id="ev-fail" rows="2" data-bind="ev-fail">${esc(e.failText)}</textarea></div>
     <p class="hint">Efectos si no sale bien</p>
-    ${e.fxFail.length?e.fxFail.map((f,i)=>fxHTML(e,f,i,'fxFail')).join(''):'<p class="hint">Sin efectos: solo se cuenta lo que pasó.</p>'}
-    <div><button type="button" class="btn sm" data-act="fx-add" data-list="fxFail">Agregar efecto</button></div>`;
+    ${blocks?fxZoneHTML(e,'fxFail'):`${e.fxFail.length?e.fxFail.map((f,i)=>fxHTML(e,f,i,'fxFail')).join(''):'<p class="hint">Sin efectos: solo se cuenta lo que pasó.</p>'}
+    <div><button type="button" class="btn sm" data-act="fx-add" data-list="fxFail">Agregar efecto</button></div>`}`;
   }
   return h+'</section>';
 }
@@ -406,6 +421,7 @@ function vEventForm(e){
   const iss=issues(e);
   return `<div class="bar"><button type="button" class="btn" data-act="ev-back">← Eventos</button><button type="button" class="btn dng" data-act="ev-del" data-confirm="¿Eliminar? Tocá otra vez">Eliminar evento</button></div>
   ${iss.length?`<div class="note warn"><b>Para revisar</b><ul>${iss.map(i=>`<li>${esc(i)}</li>`).join('')}</ul></div>`:''}
+  ${viewToggleHTML()}
   <section class="card sec"><h3 class="h3">Qué pasa</h3><div><label for="ev-text">Texto del evento</label><textarea id="ev-text" rows="3" data-bind="ev-text">${esc(e.text)}</textarea></div>
   <div class="acts">${e.roles.map(r=>`<button type="button" class="btn sm" data-act="token" data-t="${r.n}">Insertar {${r.n}}</button>`).join('')}</div>
   <p class="prev" id="ev-prev">${previewHTML(e)}</p></section>
@@ -413,11 +429,11 @@ function vEventForm(e){
   <datalist id="tags">${allTags().map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
   ${e.roles.map((r,i)=>`<div class="rrow"><span class="rl">${r.n}</span>${i===0?'<span class="hint">Actúa · vivo</span>':`<select data-bind="role-req" data-i="${i}" aria-label="Estado de ${r.n}">${REQ.map(q=>`<option value="${q[0]}" ${r.req===q[0]?'selected':''}>${q[1]}</option>`).join('')}</select>`}<input type="text" list="tags" value="${esc(r.look)}" placeholder="imagen: principal" data-bind="role-look" data-i="${i}" aria-label="Etiqueta de imagen de ${r.n}" autocomplete="off">${(i===e.roles.length-1&&i>0)?`<button type="button" class="x" data-act="role-del" aria-label="Quitar ${r.n}">✕</button>`:''}</div>`).join('')}
   ${e.roles.length<4?'<div><button type="button" class="btn sm" data-act="role-add">Agregar participante</button></div>':''}</section>
-  <section class="card sec"><h3 class="h3">Condiciones</h3><p class="hint">El evento solo puede ocurrir si se cumplen. Combiná reglas con grupos Y, O y NO, y anidá grupos dentro de grupos. Una stat que el personaje no tiene vale 0.</p>${condHTML(e,e.cond,'',0)}</section>
+  ${ui.evView==='blocks'?programHTML(e):`  <section class="card sec"><h3 class="h3">Condiciones</h3><p class="hint">El evento solo puede ocurrir si se cumplen. Combiná reglas con grupos Y, O y NO, y anidá grupos dentro de grupos. Una stat que el personaje no tiene vale 0.</p>${condHTML(e,e.cond,'',0)}</section>
   <section class="card sec"><h3 class="h3">Efectos</h3><p class="hint">Lo que cambia cuando ocurre. Si un objeto no entra en los slots, el personaje no tiene la stat o no hay equipo para el efecto, ese efecto no se aplica y queda una nota en el registro.</p>
   ${e.fx.length?e.fx.map((f,i)=>fxHTML(e,f,i,'fx')).join(''):'<p class="hint">Sin efectos: el evento es solo una escena.</p>'}
   <div><button type="button" class="btn sm" data-act="fx-add" data-list="fx">Agregar efecto</button></div></section>
-  ${chanceSection(e)}
+  ${chanceSection(e)}`}
   <section class="card sec"><h3 class="h3">Frecuencia</h3><div><input type="range" id="ev-weight" min="1" max="10" value="${e.weight}" data-bind="ev-weight" aria-label="Frecuencia"> <output id="ev-w" class="chip">${e.weight}</output></div><p class="hint">Más alta significa que aparece más seguido cuando puede ocurrir.</p></section>
   <div class="acts"><button type="button" class="btn pri" data-act="ev-back">Listo</button></div>`;
 }
@@ -693,7 +709,7 @@ const ACT={
   'g-op'(b){const e=curEv();nodeAt(e.cond,b.dataset.path).op=b.dataset.op;structural();},
   'add-rule'(b){
     const e=curEv(),g=nodeAt(e.cond,b.dataset.path);
-    g.c.push({t:'r',neg:false,role:'X',kind:'item',val:defaultVal('item'),op:'>=',num:1,role2:e.roles[1]?e.roles[1].n:'X'});structural();
+    g.c.push(newRule(e));structural();
   },
   'add-group'(b){const e=curEv(),g=nodeAt(e.cond,b.dataset.path);g.c.push({t:'g',op:'or',c:[]});structural();},
   'node-del'(b){const e=curEv(),q=parentOf(e.cond,b.dataset.path);q.parent.c.splice(q.idx,1);structural();},
@@ -780,23 +796,12 @@ const BIND={
   'role-req'(t){const e=curEv();if(e){e.roles[+t.dataset.i].req=t.value;touch();}},
   'role-look'(t){const e=curEv();if(e){e.roles[+t.dataset.i].look=t.value;touch();}},
   'rule-role'(t){const e=curEv();nodeAt(e.cond,t.dataset.path).role=t.value;structural();},
-  'rule-kind'(t){
-    const e=curEv(),r=nodeAt(e.cond,t.dataset.path);
-    r.kind=t.value;r.val=defaultVal(r.kind);r.op='>=';r.num=1;
-    r.role2=e.roles.map(x=>x.n).find(n=>n!==r.role)||'Y';
-    structural();
-  },
+  'rule-kind'(t){const e=curEv();setRuleKind(e,nodeAt(e.cond,t.dataset.path),t.value);structural();},
   'rule-val'(t){const e=curEv();nodeAt(e.cond,t.dataset.path).val=t.value;structural();},
   'rule-op'(t){const e=curEv();nodeAt(e.cond,t.dataset.path).op=t.value;structural();},
   'rule-num'(t){const e=curEv();const v=parseFloat(t.value);if(isFinite(v)){nodeAt(e.cond,t.dataset.path).num=v;touch();}},
   'rule-role2'(t){const e=curEv();nodeAt(e.cond,t.dataset.path).role2=t.value;structural();},
-  'fx-k'(t){
-    const e=curEv(),f=fxList(e,t.dataset.list)[+t.dataset.i];
-    f.k=t.value;f.ref='';f.by='';
-    if(TEAM_FX.includes(f.k)) f.by=(e.roles.map(r=>r.n).find(n=>n!==f.role))||'';   // el segundo participante
-    if(f.k==='teamForm'||f.k==='teamShare') f.num=1;
-    structural();
-  },
+  'fx-k'(t){const e=curEv();setFxKind(e,fxList(e,t.dataset.list)[+t.dataset.i],t.value);structural();},
   'fx-ref'(t){const e=curEv();fxList(e,t.dataset.list)[+t.dataset.i].ref=t.value;structural();},
   'fx-role'(t){const e=curEv();fxList(e,t.dataset.list)[+t.dataset.i].role=t.value;structural();},
   'fx-by'(t){const e=curEv();fxList(e,t.dataset.list)[+t.dataset.i].by=t.value;structural();},
