@@ -37,7 +37,19 @@ Al abrir un evento, la pantalla muestra por defecto el **Programa del evento**: 
 - Los grupos se pueden anidar sin límite; un grupo no se puede meter dentro de sí mismo.
 - El botón **Bloques / Formulario** cambia de vista: las dos editan los mismos datos y no se pierde nada. Se recuerda tu elección.
 
-Todavía no existen: los escenarios, «dividirse para buscar recursos» y los estados alterados.
+## Novedades de la etapa 4: estados alterados y regla «Es»
+
+- **Estados alterados** (pestaña Estados): quemadura, veneno, aturdimiento, lo que quieras. Cada uno puede
+  - **cambiar stats** mientras dura (suma o multiplica; las stats que el personaje no tiene siguen en 0),
+  - **impedir actuar** al personaje por su cuenta (sigue pudiendo ser blanco de otros),
+  - **hacer algo cada día** con una probabilidad: restar una stat, cambiar la lealtad o eliminarlo,
+  - **durar N días** (los N siguientes a aquel en que se aplicó) o hasta que un evento lo quite.
+  Un personaje puede tener varios a la vez, y puede empezar con alguno (ficha del personaje).
+- **Bloques nuevos**: reglas «tiene el estado» y «tiene algún estado alterado»; efectos «Aplica el estado», «Quita el estado» y «Quita todos los estados». Así se arma, por ejemplo, «si X está quemado y le queda poca Fuerza, puede morir por las quemaduras».
+- **Regla «es el personaje»**: «Si X es Valeria, entonces…». Sirve para eventos de un personaje en particular.
+- En la simulación se ven los estados en el elenco y en la ficha, junto con las stats ya modificadas («Fuerza 3 (base 4)»). El modo caos también reparte estados al azar.
+
+Todavía no existen: los escenarios y «dividirse para buscar recursos».
 
 ## Qué hay en cada archivo
 
@@ -50,5 +62,6 @@ Todavía no existen: los escenarios, «dividirse para buscar recursos» y los es
 | `js/almacen.js` | Guardado en el navegador, imágenes, exportar e importar. |
 | `js/interfaz.js` | Pantallas y botones. |
 | `js/bloques.js` | Editor visual de bloques (arrastrar, anidar, colores). |
+| `js/interfaz-estados.js` | Pantallas de estados alterados. |
 | `js/interfaz-equipos.js` | Pantallas de equipos y vocabulario. |
 | `js/inicio.js` | Arranque. |

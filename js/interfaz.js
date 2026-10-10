@@ -21,7 +21,8 @@ const KIND_LBL={
   item:'tiene el objeto',space:'tiene espacio para',skill:'tiene la habilidad',gender:'es de sexo',status:'está',
   hasstat:'posee la stat',stat:'con valor de',statvs:'compara la stat',
   emotion:'siente',loyalty:'tiene lealtad',inteam:'tiene equipo',isleader:'es líder de su equipo',
-  sameteam:'está en el mismo equipo que',teamsize:'tiene un equipo de tamaño',teamitem:'tiene (propio o compartido) el objeto'
+  sameteam:'está en el mismo equipo que',teamsize:'tiene un equipo de tamaño',teamitem:'tiene (propio o compartido) el objeto',
+  is:'es el personaje',state:'tiene el estado',anystate:'tiene algún estado alterado'
 };
 const KL={
   emotions:{title:'Emociones',noun:'emoción',ph:'Ej: Miedo',hint:'Una emoción es un estado de ánimo que un personaje puede sentir (de a una por vez). Los eventos pueden pedirla como condición, otorgarla o quitarla. Si «dura» algunos días, se pasa sola. Si el personaje tiene una imagen con una etiqueta igual al nombre de la emoción, esa imagen se muestra mientras la siente.'},
@@ -31,8 +32,8 @@ const KL={
 };
 
 let ui={
-  tab:'sim',char:null,ev:null,team:null,bulk:false,selMode:false,sel:new Set(),
-  q:{chars:'',items:'',skills:'',stats:'',emotions:'',events:'',roster:'',teams:'',members:''},
+  tab:'sim',char:null,ev:null,team:null,state:null,bulk:false,selMode:false,sel:new Set(),
+  q:{chars:'',items:'',skills:'',stats:'',emotions:'',states:'',events:'',roster:'',teams:'',members:''},
   pq:{items:'',skills:''},fgender:'',fstate:'',evf:'',nameSamples:[],
   simSel:null,simFilter:'all',summary:false,optsOpen:false,shuffleN:10,chaos:false,chaosLvl:5,
   dataMsg:'',importBuf:'',exportText:'',exportMsg:''
@@ -68,13 +69,13 @@ function previewHTML(e){
 /* ---------- Referencias y validación ---------- */
 function walkRules(n,fn){if(n.t==='g')n.c.forEach(c=>walkRules(c,fn));else fn(n);}
 function countRules(n){let k=0;walkRules(n,()=>{k++;});return k;}
-const refListOf=kind=>({item:'items',space:'items',teamitem:'items',skill:'skills',hasstat:'stats',stat:'stats',statvs:'stats',emotion:'emotions'}[kind]||null);
+const refListOf=kind=>({item:'items',space:'items',teamitem:'items',skill:'skills',hasstat:'stats',stat:'stats',statvs:'stats',emotion:'emotions',is:'chars',state:'states'}[kind]||null);
 const RULE_NEEDS_ROLE2=['statvs','sameteam'];
 const RULE_NEEDS_CMP=['stat','statvs','teamsize','loyalty'];
 const RULE_NEEDS_NUM=['stat','teamsize','loyalty'];
 const allFx=e=>e.fx.concat(e.fxFail);
 function usage(kind,id){
-  const fk={items:['giveItem','removeItem','teamTake'],skills:['giveSkill','removeSkill'],stats:['stat'],emotions:['emotion']}[kind];
+  const fk={items:['giveItem','removeItem','teamTake'],skills:['giveSkill','removeSkill'],stats:['stat'],emotions:['emotion'],states:['addState','removeState']}[kind];
   const ev=P.events.filter(e=>{
     let hit=false;
     walkRules(e.cond,r=>{if(refListOf(r.kind)===kind&&r.val===id)hit=true;});
@@ -84,7 +85,7 @@ function usage(kind,id){
   const ch=P.chars.filter(c=>kind==='stats'?hasStat(c,id):(kind==='emotions'?c.emotion===id:c[kind].includes(id))).length;
   return {ev,ch};
 }
-const NOUN={items:'objeto',skills:'habilidad',stats:'stat',emotions:'emoción'};
+const NOUN={items:'objeto',skills:'habilidad',stats:'stat',emotions:'emoción',chars:'personaje',states:'estado alterado'};
 function issues(e){
   const out=new Set(), rn=e.roles.map(r=>r.n);
   if(!e.text.trim()) out.add('El evento no tiene texto.');
@@ -118,18 +119,19 @@ function allTags(){
 
 /* ---------- Estructura general ---------- */
 function renderTabs(){
-  const T=[['chars','Personajes',P.chars.length],['teams','Equipos',P.teams.length],['items','Objetos',P.items.length],['skills','Habilidades',P.skills.length],['stats','Stats',P.stats.length],['emotions','Emociones',P.emotions.length],['events','Eventos',P.events.length],['sim','Simulación',null],['data','Datos',null]];
+  const T=[['chars','Personajes',P.chars.length],['teams','Equipos',P.teams.length],['items','Objetos',P.items.length],['skills','Habilidades',P.skills.length],['stats','Stats',P.stats.length],['emotions','Emociones',P.emotions.length],['states','Estados',P.states.length],['events','Eventos',P.events.length],['sim','Simulación',null],['data','Datos',null]];
   tabsEl.innerHTML=T.map(t=>`<button type="button" class="${ui.tab===t[0]?'on':''}" ${ui.tab===t[0]?'aria-current="page"':''} data-act="tab" data-tab="${t[0]}">${t[1]}${t[2]!=null?`<span class="n">${t[2]}</span>`:''}</button>`).join('');
 }
 function render(){
   renderTabs();
-  const f={chars:vChars,teams:vTeams,items:()=>vTags('items'),skills:()=>vTags('skills'),stats:()=>vTags('stats'),emotions:()=>vTags('emotions'),events:vEvents,sim:vSim,data:vData}[ui.tab];
+  const f={chars:vChars,teams:vTeams,items:()=>vTags('items'),skills:()=>vTags('skills'),stats:()=>vTags('stats'),emotions:()=>vTags('emotions'),states:vStates,events:vEvents,sim:vSim,data:vData}[ui.tab];
   app.innerHTML=f();
 }
 function countText(k){
   if(k==='chars') return charsFiltered().length+' de '+P.chars.length;
   if(k==='events') return eventsFiltered().length+' de '+P.events.length;
   if(k==='teams') return teamsFiltered().length+' de '+P.teams.length;
+  if(k==='states') return statesFiltered().length+' de '+P.states.length;
   return tagsFiltered(k).length+' de '+P[k].length;
 }
 /* Vuelve a dibujar solo la lista (así no se pierde el foco del buscador). */
@@ -137,7 +139,7 @@ function refreshList(k){
   if(k==='roster'){const r=$('#rlist');if(r&&S)r.innerHTML=rosterListHTML(S);return;}
   if(k==='members'){refreshMembers();return;}
   const el=$('#list');if(!el)return;
-  const f={chars:charsListHTML,teams:teamsListHTML,items:()=>tagRowsHTML('items'),skills:()=>tagRowsHTML('skills'),stats:()=>tagRowsHTML('stats'),emotions:()=>tagRowsHTML('emotions'),events:eventsListHTML}[k];
+  const f={chars:charsListHTML,teams:teamsListHTML,items:()=>tagRowsHTML('items'),skills:()=>tagRowsHTML('skills'),stats:()=>tagRowsHTML('stats'),emotions:()=>tagRowsHTML('emotions'),states:statesListHTML,events:eventsListHTML}[k];
   if(f)el.innerHTML=f();
   const c=$('#count');if(c)c.textContent=countText(k);
   const sc=$('#selcount');if(sc)sc.textContent=plural(ui.sel.size,'seleccionado','seleccionados');
@@ -229,6 +231,12 @@ function imagesSection(c){
   <div><label for="img-file">Subir archivos</label><input type="file" id="img-file" accept="image/*" multiple data-bind="img-file"></div>
   <div><label for="img-url">O agregar por URL</label><div class="urlrow"><input type="text" id="img-url" placeholder="https://…" data-enter="img-url" autocomplete="off"><button type="button" class="btn" data-act="img-url">Agregar URL</button></div></div></section>`;
 }
+function statesSection(c){
+  if(!P.states.length) return '';
+  return `<section class="card sec"><h3 class="h3">Estados alterados al empezar</h3>
+  <p class="hint">Marcá los estados con los que este personaje arranca la partida (quemado, envenenado…). Se crean en la pestaña Estados.</p>
+  <div class="pick">${P.states.map(st=>`<label><input type="checkbox" data-bind="char-state" data-id="${st.id}" ${c.states.includes(st.id)?'checked':''}>${esc((st.icon?st.icon+' ':'')+(st.name||'Sin nombre'))}</label>`).join('')}</div></section>`;
+}
 function vCharForm(c){
   const others=P.chars.filter(x=>x.id!==c.id);
   return `<div class="bar"><button type="button" class="btn" data-act="char-back">← Personajes</button><button type="button" class="btn dng" data-act="char-del" data-confirm="¿Eliminar? Tocá otra vez">Eliminar personaje</button></div>
@@ -239,6 +247,7 @@ function vCharForm(c){
   <div class="two"><div><label for="c-loy">Lealtad (0 a 100)</label><input type="number" id="c-loy" min="0" max="100" value="${c.loy}" data-bind="char-loy"></div>
   <div><label for="c-emotion">Emoción inicial</label><select id="c-emotion" data-bind="char-emotion"><option value="">Ninguna</option>${P.emotions.map(m=>`<option value="${m.id}" ${c.emotion===m.id?'selected':''}>${esc((m.icon?m.icon+' ':'')+(m.name||'Sin nombre'))}</option>`).join('')}</select></div></div>
   <p class="hint">La lealtad pesa en las traiciones: con poca lealtad, un personaje es más propenso a abandonar o traicionar a su equipo (si los eventos lo usan). El equipo se arma en la pestaña Equipos.</p></section>
+  ${statesSection(c)}
   ${imagesSection(c)}
   <section class="card sec"><h3 class="h3">Inventario</h3>
   <div class="two"><div><label for="c-slots">Slots</label><input type="number" id="c-slots" min="0" max="99" value="${c.slots}" data-bind="char-slots"></div><span class="meter ${usedSlots(c)>c.slots?'bad':''}" id="slot-meter">${meterText(c)}</span></div>
@@ -441,6 +450,7 @@ function vEventForm(e){
 /* ======================= SIMULACIÓN ======================= */
 function ensureSim(){if(!S)S=newSim();return S;}
 const emoOf=c=>c.emotion?(P.emotions.find(m=>m.id===c.emotion)||null):null;
+const stIcons=c=>(c.states||[]).map(x=>{const d=stateDef(x.id);return d?`<span class="emo" title="${esc(d.name)}">${esc(d.icon||d.name.slice(0,3))}</span>`:'';}).join('');
 const emoTag=c=>{const m=emoOf(c);return m?` <span class="emo" title="${esc(m.name)}">${esc(m.icon||m.name)}</span>`:'';};
 function rosterListHTML(s){
   const q=norm(ui.q.roster);
@@ -448,7 +458,7 @@ function rosterListHTML(s){
   if(!L.length) return '<p class="hint">Sin resultados.</p>';
   return '<ul>'+L.map(c=>{
     const t=teamOfIn(s,c);
-    return `<li><button type="button" class="ro ${c.alive?'':'out'} ${ui.simSel===c.id?'on':''}" data-act="sim-sel" data-id="${c.id}">${av(c)}<div><b>${esc(c.name)}${emoTag(c)}</b><small>${c.kills?plural(c.kills,'baja','bajas')+' · ':''}${usedSlots(c)}/${c.slots} slots${t?' · '+esc(t.name):''}</small></div><span class="st">${c.alive?'VIVO':'BAJA'}</span></button></li>`;
+    return `<li><button type="button" class="ro ${c.alive?'':'out'} ${ui.simSel===c.id?'on':''}" data-act="sim-sel" data-id="${c.id}">${av(c)}<div><b>${esc(c.name)}${emoTag(c)}${stIcons(c)}</b><small>${c.kills?plural(c.kills,'baja','bajas')+' · ':''}${usedSlots(c)}/${c.slots} slots${t?' · '+esc(t.name):''}</small></div><span class="st">${c.alive?'VIVO':'BAJA'}</span></button></li>`;
   }).join('')+'</ul>';
 }
 function teamsSideHTML(s){
@@ -463,12 +473,14 @@ function simDetail(s){
   if(!c) return '';
   const items=[...c.items].map(id=>nameOf(P.items,id)).filter(Boolean);
   const skills=[...c.skills].map(id=>nameOf(P.skills,id)).filter(Boolean);
-  const stats=Object.keys(c.stats).map(id=>({n:nameOf(P.stats,id),v:c.stats[id]})).filter(x=>x.n);
+  const stats=Object.keys(c.stats).map(id=>({n:nameOf(P.stats,id),v:c.stats[id],e:effStat(c,id)})).filter(x=>x.n);
+  const sts=c.states.map(x=>({d:stateDef(x.id),x})).filter(o=>o.d);
   const t=teamOfIn(s,c),em=emoOf(c);
   return `<section class="card detail"><div class="dhead">${av(c,'lg')}<div><h3 class="h3">${esc(c.name)}</h3><span class="st ${c.alive?'':'out'}">${c.alive?'VIVO':'BAJA'}</span> <span class="hint">${GEN[c.gender]}</span></div><button type="button" class="x" data-act="sim-sel" data-id="" aria-label="Cerrar">✕</button></div>
   <dl><div><dt>Equipo</dt><dd>${t?esc(t.name)+(t.leader===c.id?' (líder)':''):'<span class="hint">Sin equipo</span>'}</dd></div>
   <div><dt>Ánimo</dt><dd>Lealtad <b>${Math.round(c.loy)}</b> · ${em?esc((em.icon?em.icon+' ':'')+em.name):'<span class="hint">sin emoción</span>'}</dd></div>
-  <div><dt>Stats</dt><dd>${stats.length?stats.map(x=>`${esc(x.n)} <b>${x.v}</b>`).join(' · '):'<span class="hint">Ninguna</span>'}</dd></div>
+  <div><dt>Estados alterados</dt><dd>${sts.length?sts.map(o=>esc((o.d.icon?o.d.icon+' ':'')+o.d.name)+(o.d.days>0?` <small>(hasta el día ${o.x.day+o.d.days})</small>`:'')).join(' · '):'<span class="hint">Ninguno</span>'}</dd></div>
+  <div><dt>Stats</dt><dd>${stats.length?stats.map(x=>x.e!==x.v?`${esc(x.n)} <b>${round2(x.e)}</b> <small>(base ${round2(x.v)})</small>`:`${esc(x.n)} <b>${round2(x.v)}</b>`).join(' · '):'<span class="hint">Ninguna</span>'}</dd></div>
   <div><dt>Inventario (${usedSlots(c)}/${c.slots})</dt><dd>${items.length?esc(items.join(', ')):'<span class="hint">Vacío</span>'}</dd></div>
   <div><dt>Habilidades</dt><dd>${skills.length?esc(skills.join(', ')):'<span class="hint">Ninguna</span>'}</dd></div>
   <div><dt>Bajas</dt><dd>${c.kills?esc(c.victims.join(', ')):'<span class="hint">Ninguna</span>'}</dd></div>
@@ -540,7 +552,7 @@ async function copyProject(){
   catch(e){showExportText(json,'No se pudo copiar solo. Seleccioná el texto y copialo.');}
 }
 function replaceProject(p){
-  P=p;S=null;ui.char=ui.ev=ui.simSel=ui.team=null;ui.nameSamples=[];ui.sel.clear();ui.exportText='';ui.dataMsg='';ui.importBuf='';
+  P=p;S=null;ui.char=ui.ev=ui.simSel=ui.team=ui.state=null;ui.nameSamples=[];ui.sel.clear();ui.exportText='';ui.dataMsg='';ui.importBuf='';
   saveNow().then(gcBlobs);render();
 }
 
@@ -555,7 +567,7 @@ function defaultVal(kind){
 }
 
 /* ======================= ACCIONES (botones) ======================= */
-const blankChar=name=>({id:uid(),name,gender:'o',enabled:true,slots:DEFAULT_SLOTS,imgs:[],items:[],skills:[],stats:{},loy:50,emotion:''});
+const blankChar=name=>({id:uid(),name,gender:'o',enabled:true,slots:DEFAULT_SLOTS,imgs:[],items:[],skills:[],stats:{},loy:50,emotion:'',states:[]});
 const selChars=()=>P.chars.filter(c=>ui.sel.has(c.id));
 function pickBulk(kind,on,cat){
   const c=curChar();if(!c)return;
@@ -586,7 +598,7 @@ function tagAdd(kind){
 const ACT={
   tab(b){
     const k=b.dataset.tab;
-    if(ui.tab===k){ui.char=null;ui.ev=null;ui.team=null;}
+    if(ui.tab===k){ui.char=null;ui.ev=null;ui.team=null;ui.state=null;}
     ui.tab=k;render();
   },
   /* personajes */
@@ -675,6 +687,7 @@ const ACT={
   'tag-del'(b){
     const kind=b.dataset.kind,id=b.dataset.id,u=usage(kind,id);
     P[kind]=P[kind].filter(i=>i.id!==id);
+    if(kind==='stats')P.states.forEach(st=>{st.mods=st.mods.filter(m=>m.stat!==id);st.daily=st.daily.filter(d=>!(d.k==='stat'&&d.ref===id));});
     P.chars.forEach(c=>{
       if(kind==='stats')delete c.stats[id];
       else if(kind==='emotions'){if(c.emotion===id)c.emotion='';}
@@ -814,6 +827,13 @@ const BIND={
   'ev-fail'(t){const e=curEv();if(e){e.failText=t.value;touch();}},
   'char-loy'(t){const c=curChar();const v=parseFloat(t.value);if(c&&isFinite(v)){c.loy=Math.min(100,Math.max(0,v));touch();}},
   'char-emotion'(t){const c=curChar();if(c){c.emotion=t.value;touch();}},
+  'char-state'(t){
+    const c=curChar();if(!c)return;
+    const i=c.states.indexOf(t.dataset.id);
+    if(t.checked&&i<0)c.states.push(t.dataset.id);
+    if(!t.checked&&i>=0)c.states.splice(i,1);
+    touch();
+  },
   'tag-icon'(t){const x=P.emotions.find(i=>i.id===t.dataset.id);if(x){x.icon=t.value.trim();touch();}},
   'tag-days'(t){const x=P.emotions.find(i=>i.id===t.dataset.id);const v=parseInt(t.value,10);if(x&&!isNaN(v)){x.days=Math.max(0,v);touch();}},
   'shuffle-n'(t){ui.shuffleN=t.value;},

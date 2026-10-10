@@ -4,15 +4,18 @@
    No toca la pantalla. Todo lo que el usuario crea vive en el objeto P:
 
    P = {
-     v: 3,
+     v: 4,
      stats:    [{id, name, def}]                     catálogo de stats
      items:    [{id, name, size, cat}]               objetos (size = espacio que ocupan)
      skills:   [{id, name, cat}]                     habilidades
      emotions: [{id, name, icon, days}]              emociones (days: se pasa sola; 0 = no)
+     states:   [{id, name, icon, days, canAct, text,  estados alterados (quemadura, veneno…)
+                 mods:[{stat, mode:'add'|'mult', num}],     cambian stats mientras dura
+                 daily:[{k:'stat'|'loyalty'|'kill', ref, mode, num, pct}]}]  efectos de cada día
      chars:    [{id, name, gender, enabled, slots,   personajes
                  imgs:[{id, kind:'file'|'url'|'data', src, tag}],
                  items:[ids], skills:[ids], stats:{statId: número},
-                 loy: 0-100, emotion: id|''}]
+                 loy: 0-100, emotion: id|'', states:[ids]}]
      teams:    [{id, name, leader, members:[ids], share}]   equipos que existen desde el día 1
      words:    {nouns:[{id,text,num,gen}], adjs:[...]}      vocabulario del generador de nombres
      teamPresets: [texto]                            nombres de equipo preestablecidos
@@ -27,8 +30,8 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;'
 
 const GEN={f:'Femenino',m:'Masculino',o:'Otro'};
 const ROLE_NAMES=['X','Y','Z','W'];
-const KINDS=['item','space','skill','gender','status','hasstat','stat','statvs','emotion','loyalty','inteam','isleader','sameteam','teamsize','teamitem'];
-const NOVAL=['inteam','isleader','sameteam','teamsize','loyalty'];   // reglas que no eligen un valor de una lista
+const KINDS=['item','space','skill','gender','status','hasstat','stat','statvs','emotion','loyalty','inteam','isleader','sameteam','teamsize','teamitem','is','state','anystate'];
+const NOVAL=['inteam','isleader','sameteam','teamsize','loyalty','anystate'];   // reglas que no eligen un valor de una lista
 const CMP=['>=','>','<=','<','=','!='];
 const CMP_LBL={'>=':'≥','>':'>','<=':'≤','<':'<','=':'=','!=':'≠'};
 const FX={
@@ -45,7 +48,10 @@ const FX={
   teamJoin:{label:'Incorpora a un equipo',ref:null,prep:''},
   teamLeave:{label:'Saca del equipo a',ref:null,prep:''},
   teamShare:{label:'Inventario compartido',ref:null,prep:''},
-  teamTake:{label:'Toma del equipo el objeto',ref:'items',prep:'para'}
+  teamTake:{label:'Toma del equipo el objeto',ref:'items',prep:'para'},
+  addState:{label:'Aplica el estado',ref:'states',prep:'a'},
+  removeState:{label:'Quita el estado',ref:'states',prep:'de'},
+  clearStates:{label:'Quita todos los estados',ref:null,prep:'de'}
 };
 const TEAM_FX=['teamForm','teamJoin'];     // efectos que necesitan un segundo participante (campo «by»)
 const CHANCE_MODES=['always','fixed','stat','team','loyalty'];
@@ -71,7 +77,8 @@ function sampleProject(){
   const K={si:'sk_sigilo',pu:'sk_punteria',au:'sk_auxilios'};
   const T={fu:'st_fuerza',ag:'st_agilidad',ing:'st_ingenio'};
   const M={mi:'em_miedo',fu:'em_furia',ca:'em_calma',tr:'em_tristeza'};
-  const C=(name,gender,items,skills,stats,loy)=>({id:uid(),name,gender,enabled:true,slots:4,imgs:[],items:items||[],skills:skills||[],stats:stats||{},loy:loy==null?50:loy,emotion:''});
+  const A={qu:'sa_quemado',ve:'sa_veneno',at:'sa_aturdido'};   // estados alterados
+  const C=(name,gender,items,skills,stats,loy)=>({id:uid(),name,gender,enabled:true,slots:4,imgs:[],items:items||[],skills:skills||[],stats:stats||{},loy:loy==null?50:loy,emotion:'',states:[]});
   const rl=(n,req)=>({n:n,req:req||'alive',look:''});
   const FXD=f=>Object.assign({k:'kill',role:'X',ref:'',by:'',mode:'add',num:1,nm:'any'},f);
   const E=(text,weight,roles,cond,fx,extra)=>Object.assign({
@@ -82,13 +89,21 @@ function sampleProject(){
   const NM=()=>R('X','sameteam','',true,{role2:'Y'});      // «X no es del mismo equipo que Y»
   const MATES=()=>R('X','sameteam','',false,{role2:'Y'});  // «X es del mismo equipo que Y»
   const proj={
-    v:3,
+    v:4,
     fallback:'{X} pasó el día sin novedades.',
     emotions:[
       {id:M.mi,name:'Miedo',icon:'😨',days:2},
       {id:M.fu,name:'Furia',icon:'😡',days:2},
       {id:M.ca,name:'Calma',icon:'🙂',days:0},
       {id:M.tr,name:'Tristeza',icon:'😢',days:3}
+    ],
+    states:[
+      {id:A.qu,name:'Quemado',icon:'🔥',days:3,canAct:true,text:'{X} sufre por las quemaduras.',
+        mods:[{stat:T.ag,mode:'add',num:-2}],daily:[{k:'stat',ref:T.fu,mode:'add',num:-1,pct:60}]},
+      {id:A.ve,name:'Envenenado',icon:'☠️',days:4,canAct:true,text:'{X} se retuerce por el veneno.',
+        mods:[{stat:T.fu,mode:'mult',num:0.5}],daily:[{k:'kill',ref:'',mode:'add',num:1,pct:12}]},
+      {id:A.at,name:'Aturdido',icon:'💫',days:1,canAct:false,text:'',
+        mods:[{stat:T.ag,mode:'mult',num:0.5}],daily:[]}
     ],
     words:{
       nouns:[
@@ -155,11 +170,22 @@ function sampleProject(){
       E('{X} y su equipo emboscaron a {Y} en el bosque.',2,[X,Y],G('and',R('X','inteam'),NM()),[{k:'kill',role:'Y'}],
         {chance:{mode:'team',pct:50,stat:''},failText:'{Y} esquivó la emboscada de {X} y escapó.',fxFail:[{k:'emotion',role:'X',ref:M.mi}]}),
       E('{X} se asustó al oír pasos cerca.',2,[X],emptyCond(),[{k:'emotion',role:'X',ref:M.mi}]),
-      E('{X} se sintió muy triste frente al cuerpo de {Y}.',2,[X,rl('Y','dead')],emptyCond(),[{k:'emotion',role:'X',ref:M.tr}])
+      E('{X} se sintió muy triste frente al cuerpo de {Y}.',2,[X,rl('Y','dead')],emptyCond(),[{k:'emotion',role:'X',ref:M.tr}]),
+      /* ---- estados alterados ---- */
+      E('{X} dejó una fogata mal apagada y se quemó al pisarla.',2,[X],G('and',R('X','state',A.qu,true)),[{k:'addState',role:'X',ref:A.qu}]),
+      E('{X} se arrojó al río para apagar las llamas.',3,[X],G('and',R('X','state',A.qu)),[{k:'removeState',role:'X',ref:A.qu}]),
+      E('{X} no resistió las quemaduras y murió.',3,[X],G('and',R('X','state',A.qu),R('X','hasstat',T.fu),R('X','stat',T.fu,false,{op:'<=',num:3})),[{k:'kill',role:'X',by:'none'}],
+        {chance:{mode:'fixed',pct:60,stat:''},failText:'{X} aguantó las quemaduras un día más.'}),
+      E('{X} untó su cuchillo con veneno y le hizo un corte a {Y}.',2,[X,Y],G('and',R('X','item',I.cu),NM(),R('Y','state',A.ve,true)),[{k:'addState',role:'Y',ref:A.ve}]),
+      E('{X} usó el botiquín para curarse todo lo que lo aquejaba.',3,[X],G('and',R('X','item',I.bo),R('X','anystate')),[{k:'removeItem',role:'X',ref:I.bo},{k:'clearStates',role:'X'}]),
+      E('{X} se golpeó la cabeza con una rama baja y quedó aturdido.',2,[X],G('and',R('X','state',A.at,true)),[{k:'addState',role:'X',ref:A.at}])
     ]
   };
   /* un equipo ya armado desde el día 1: Mateo (líder) y Joaquín */
   const mateo=proj.chars.find(c=>c.name==='Mateo'),joaquin=proj.chars.find(c=>c.name==='Joaquín');
+  /* un evento solo para un personaje: la regla «es el personaje» */
+  const vale=proj.chars.find(c=>c.name==='Valeria');
+  proj.events.push(E('{X} sintió que alguien la observaba entre los árboles.',3,[X],G('and',R('X','is',vale.id)),[{k:'emotion',role:'X',ref:M.mi}]));
   proj.teams=[{id:'tm_lobos',name:'Los Lobos',leader:mateo.id,members:[mateo.id,joaquin.id],share:false}];
   return proj;
 }
@@ -194,11 +220,19 @@ function normalize(p){
     k:f.k,role:String(f.role||'X'),ref:f.ref?String(f.ref):'',by:String(f.by||''),
     mode:f.mode==='set'?'set':'add',num:num(f.num,1),nm:['gen','preset','any'].includes(f.nm)?f.nm:'any'
   }));
-  const o={v:3,stats:[],items:[],skills:[],emotions:[],chars:[],teams:[],words:{nouns:[],adjs:[]},teamPresets:[],events:[],fallback:'{X} pasó el día sin novedades.'};
+  const o={v:4,stats:[],items:[],skills:[],emotions:[],states:[],chars:[],teams:[],words:{nouns:[],adjs:[]},teamPresets:[],events:[],fallback:'{X} pasó el día sin novedades.'};
   o.stats=arr(p.stats).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),def:num(i.def,5)}));
   o.items=arr(p.items).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),size:Math.max(0,Math.floor(num(i.size,1))),cat:String(i.cat||'')}));
   o.skills=arr(p.skills).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),cat:String(i.cat||'')}));
   o.emotions=arr(p.emotions).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),icon:String(i.icon||'').slice(0,8),days:Math.max(0,Math.floor(num(i.days,0)))}));
+  o.states=arr(p.states).filter(i=>i&&i.id).map(i=>({
+    id:String(i.id),name:String(i.name||''),icon:String(i.icon||'').slice(0,8),days:Math.max(0,Math.floor(num(i.days,0))),
+    canAct:i.canAct!==false,text:String(i.text||''),
+    mods:arr(i.mods).filter(m=>m&&m.stat).map(m=>({stat:String(m.stat),mode:m.mode==='mult'?'mult':'add',num:num(m.num,m.mode==='mult'?1:0)})),
+    daily:arr(i.daily).filter(d=>d&&['stat','loyalty','kill'].includes(d.k)).map(d=>({
+      k:d.k,ref:d.ref?String(d.ref):'',mode:d.mode==='set'?'set':'add',num:num(d.num,d.k==='kill'?1:-1),pct:Math.min(100,Math.max(0,num(d.pct,100)))
+    }))
+  }));
   o.chars=arr(p.chars).filter(c=>c&&c.id).map(c=>{
     let imgs=arr(c.imgs).filter(i=>i&&i.id&&['file','url','data'].includes(i.kind)&&(i.kind==='file'||safeUrl(i.src)))
       .map(i=>({id:String(i.id),kind:i.kind,src:i.kind==='file'?'':String(i.src),tag:String(i.tag||'')}));
@@ -212,7 +246,8 @@ function normalize(p){
       slots:Math.max(0,Math.floor(num(c.slots,DEFAULT_SLOTS))),imgs,
       items:arr(c.items).map(String),skills:arr(c.skills).map(String),stats,
       loy:Math.min(100,Math.max(0,num(c.loy,50))),
-      emotion:o.emotions.some(m=>m.id===String(c.emotion||''))?String(c.emotion):''
+      emotion:o.emotions.some(m=>m.id===String(c.emotion||''))?String(c.emotion):'',
+      states:[...new Set(arr(c.states).map(String))].filter(id=>o.states.some(s=>s.id===id))
     };
   });
   /* equipos: cada personaje en un solo equipo, y el líder tiene que ser miembro */
@@ -252,7 +287,22 @@ const sizeOf=id=>{const i=P.items.find(x=>x.id===id);return i?i.size:0;};
 function usedSlots(ch){let n=0;ch.items.forEach(id=>{n+=sizeOf(id);});return n;}
 const slotsFree=ch=>ch.slots-usedSlots(ch);
 const hasStat=(ch,id)=>Object.prototype.hasOwnProperty.call(ch.stats,id);
-const statVal=(ch,id)=>hasStat(ch,id)?ch.stats[id]:0;   // una stat que no se tiene vale 0
+/* Valor efectivo de una stat: la base más lo que suman o multiplican los estados alterados que tenga.
+   Una stat que el personaje no tiene vale 0 y ningún estado se la da. */
+function effStat(ch,id){
+  const base=ch.stats[id];
+  if(!ch.states||!ch.states.length) return base;
+  let add=0,mul=1,hit=false;
+  ch.states.forEach(x=>{
+    const def=stateDef(typeof x==='string'?x:x.id);
+    if(def) def.mods.forEach(m=>{if(m.stat===id){hit=true;if(m.mode==='mult')mul*=m.num;else add+=m.num;}});
+  });
+  return hit?Math.max(0,(base+add)*mul):base;
+}
+const statVal=(ch,id)=>hasStat(ch,id)?effStat(ch,id):0;   // una stat que no se tiene vale 0
+const stateDef=id=>P.states.find(s=>s.id===id)||null;
+const stateName=id=>{const s=stateDef(id);return s?(s.name||'Sin nombre'):'';};
+const hasState=(ch,id)=>!!id&&(ch.states||[]).some(x=>(typeof x==='string'?x:x.id)===id);
 function cmp(a,op,b){
   switch(op){
     case '>=':return a>=b; case '>':return a>b; case '<=':return a<=b;
@@ -290,6 +340,9 @@ function evalNode(n,as){
     case 'sameteam': {const c2=as[n.role2];v=!!c2&&!!ch.team&&ch.team===c2.team;break;}
     case 'teamsize': {const t=teamOf(ch);v=cmp(t?t.members.length:0,n.op,n.num);break;}
     case 'teamitem': v=!!n.val&&hasItemOrShared(ch,n.val); break;
+    case 'is': v=!!n.val&&ch.id===n.val; break;
+    case 'state': v=hasState(ch,n.val); break;
+    case 'anystate': v=(ch.states||[]).length>0; break;
   }
   return n.neg?!v:v;
 }
@@ -305,6 +358,7 @@ function newSim(){
         id:c.id,name:c.name||'Sin nombre',gender:c.gender,imgs:c.imgs,slots:c.slots,
         items:new Set(okIds(P.items,c.items)),skills:new Set(okIds(P.skills,c.skills)),stats,
         loy:c.loy,emotion:c.emotion,emoDay:0,team:null,
+        states:okIds(P.states,c.states||[]).map(id=>({id,day:0})),
         alive:true,kills:0,victims:[],killedBy:null,diedDay:null
       };
     })
@@ -363,6 +417,7 @@ function applyFx(list,as,actor,sim,entry){
       t.alive=false; t.diedDay=sim.day; t.killedBy=by;
       if(by){by.kills++;by.victims.push(t.name);}
       entry.deaths.push(t);
+      t.states=[];                              // los caídos pierden sus estados
       const lt=removeFromTeam(sim,t);          // los caídos dejan su equipo
       if(lt&&lt.gone) entry.notes.push('El equipo «'+lt.team.name+'» se disolvió.');
     } else if(f.k==='emotion'){
@@ -398,6 +453,16 @@ function applyFx(list,as,actor,sim,entry){
       if(slotsFree(t)<sizeOf(f.ref)){entry.notes.push(t.name+' no tenía espacio para '+nameOf(P.items,f.ref)+'.');continue;}
       giver.items.delete(f.ref);t.items.add(f.ref);
       entry.notes.push(t.name+' tomó '+nameOf(P.items,f.ref)+' de '+giver.name+'.');
+    } else if(f.k==='addState'){
+      if(!t.alive||!f.ref||!stateDef(f.ref)) continue;
+      const ex=t.states.find(x=>x.id===f.ref);
+      if(ex){ex.day=sim.day;entry.notes.push(t.name+' ya estaba «'+stateName(f.ref)+'»: el estado se renueva.');}
+      else{t.states.push({id:f.ref,day:sim.day});entry.notes.push(t.name+' quedó «'+stateName(f.ref)+'».');}
+    } else if(f.k==='removeState'){
+      const i=t.states.findIndex(x=>x.id===f.ref);
+      if(i>=0){t.states.splice(i,1);entry.notes.push(t.name+' ya no está «'+stateName(f.ref)+'».');}
+    } else if(f.k==='clearStates'){
+      if(t.states.length){entry.notes.push(t.name+' se libró de '+t.states.map(x=>'«'+stateName(x.id)+'»').join(', ')+'.');t.states=[];}
     } else if(f.k==='giveItem'&&f.ref){
       if(t.items.has(f.ref)) continue;
       if(slotsFree(t)<sizeOf(f.ref)){entry.notes.push(t.name+' no tenía espacio para '+nameOf(P.items,f.ref)+'.');continue;}
@@ -425,6 +490,7 @@ function chaosShake(sim,level){
     shuffle(P.items.slice()).forEach(it=>{if(Math.random()<0.5&&slotsFree(c)>=it.size)c.items.add(it.id);});
     c.skills=new Set(P.skills.filter(()=>Math.random()<0.4).map(s=>s.id));
     c.loy=Math.floor(Math.random()*101);
+    c.states=P.states.filter(()=>Math.random()<0.2).map(x=>({id:x.id,day:sim.day}));
     if(P.emotions.length&&Math.random()<0.6){c.emotion=P.emotions[Math.floor(Math.random()*P.emotions.length)].id;c.emoDay=sim.day;}
   });
   return n;
@@ -452,6 +518,45 @@ function successChance(e,as){
   return 1;
 }
 
+/* Estados alterados al empezar un día: los que ya cumplieron su duración se van y los demás
+   hacen sus efectos diarios (con su probabilidad). Un estado de N días actúa los N días siguientes
+   a aquel en que se aplicó. Cada vez que algo pasa queda una línea en el registro. */
+const round2=x=>Math.round(x*100)/100;
+function tickStates(sim,entries){
+  const mk=c=>({html:'',who:[{c,src:lookFor(c,'')}],deaths:[],notes:[],chance:null});
+  sim.chars.filter(c=>c.alive).forEach(c=>{
+    c.states.slice().forEach(st=>{
+      if(!c.alive||!c.states.includes(st)) return;
+      const def=stateDef(st.id);
+      if(!def){c.states=c.states.filter(x=>x!==st);return;}
+      if(def.days>0&&sim.day-st.day>def.days){
+        c.states=c.states.filter(x=>x!==st);
+        const en=mk(c);en.html=fmt('{X} se recuperó de «'+def.name+'».',{X:c});entries.push(en);
+        return;
+      }
+      if(sim.day<=st.day||!def.daily.length) return;
+      const en=mk(c);let did=false,died=false;
+      for(const d of def.daily){
+        if(!c.alive) break;
+        if(d.pct<100&&Math.random()*100>=d.pct) continue;
+        if(d.k==='kill'){applyFx([{k:'kill',role:'X',by:'none'}],{X:c},c,sim,en);did=died=true;}
+        else if(d.k==='stat'){
+          if(!d.ref||!hasStat(c,d.ref)) continue;
+          const b=c.stats[d.ref];c.stats[d.ref]=d.mode==='set'?d.num:b+d.num;
+          en.notes.push(nameOf(P.stats,d.ref)+': '+round2(b)+' → '+round2(c.stats[d.ref])+'.');did=true;
+        } else if(d.k==='loyalty'){
+          const b=c.loy;c.loy=Math.min(100,Math.max(0,d.mode==='set'?d.num:b+d.num));
+          en.notes.push('Lealtad: '+round2(b)+' → '+round2(c.loy)+'.');did=true;
+        }
+      }
+      if(did){
+        en.html=fmt(died?'{X} murió por «'+def.name+'».':(def.text.trim()||'{X} sufre por «'+def.name+'».'),{X:c});
+        entries.push(en);
+      }
+    });
+  });
+}
+
 function playDay(sim,opts){
   if(sim.over) return;
   opts=opts||{};
@@ -464,12 +569,19 @@ function playDay(sim,opts){
     if(d>0&&sim.day-c.emoDay>=d) c.emotion='';
   });
   const used=new Set(), entries=[];
+  tickStates(sim,entries);
   let chaos=null;
   if(opts.chaos>0) chaos={shaken:chaosShake(sim,opts.chaos),wild:0};
   const wild=opts.chaos>0?Math.min(0.7,opts.chaos*0.07):0;
   const order=shuffle(sim.chars.filter(c=>c.alive));
   for(const actor of order){
     if(!actor.alive||used.has(actor.id)) continue;
+    /* un estado puede impedir que el personaje haga algo por su cuenta (sigue pudiendo ser blanco de otros) */
+    const blocker=actor.states.map(x=>stateDef(x.id)).find(d=>d&&d.canAct===false);
+    if(blocker){
+      entries.push({html:fmt('{X} no pudo actuar: está «'+blocker.name+'».',{X:actor}),who:[{c:actor,src:lookFor(actor,'')}],deaths:[],notes:[],chance:null});
+      continue;
+    }
     const ignore=wild>0&&Math.random()<wild;
     const cands=[];
     for(const e of P.events){

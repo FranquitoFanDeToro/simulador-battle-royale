@@ -16,7 +16,8 @@ ui.evView=(()=>{try{return localStorage.getItem('br.evView')==='form'?'form':'bl
 
 /* ---------- Categorías (color) ---------- */
 const RULE_CAT={
-  gender:'char',status:'char',
+  gender:'char',status:'char',is:'char',
+  state:'state',anystate:'state',
   item:'item',space:'item',teamitem:'item',
   skill:'skill',
   hasstat:'stat',stat:'stat',statvs:'stat',
@@ -29,13 +30,14 @@ const FX_CAT={
   giveSkill:'skill',removeSkill:'skill',
   stat:'stat',
   emotion:'emo',emotionClear:'emo',
-  loyalty:'team',teamForm:'team',teamJoin:'team',teamLeave:'team',teamShare:'team'
+  loyalty:'team',teamForm:'team',teamJoin:'team',teamLeave:'team',teamShare:'team',
+  addState:'state',removeState:'state',clearStates:'state'
 };
-const CAT_LBL={char:'Personaje',item:'Objetos',skill:'Habilidades',stat:'Stats',emo:'Emociones',team:'Equipos y lealtad',kill:'Eliminar'};
-const CAT_ORDER=['char','item','skill','stat','emo','team'];
+const CAT_LBL={char:'Personaje',item:'Objetos',skill:'Habilidades',stat:'Stats',emo:'Emociones',state:'Estados alterados',team:'Equipos y lealtad',kill:'Eliminar'};
+const CAT_ORDER=['char','item','skill','stat','emo','state','team'];
 
 /* ---------- Dibujo ---------- */
-function pickerHTML(attrs){
+function blkPickerHTML(attrs){
   const rules=CAT_ORDER.map(c=>{
     const ks=KINDS.filter(k=>RULE_CAT[k]===c);
     return ks.length?`<optgroup label="Regla · ${CAT_LBL[c]}">${ks.map(k=>`<option value="r:${k}">${esc(KIND_LBL[k])}</option>`).join('')}</optgroup>`:'';
@@ -65,7 +67,7 @@ function blkNode(e,n,path,depth){
     const root=depth===0;
     const kids=n.c.length?n.c.map((ch,i)=>blkNode(e,ch,path?path+'.'+i:String(i),depth+1)).join(''):`<p class="dz-empty">Sin reglas: siempre se cumple. Agregá un bloque o arrastrá uno acá.</p>`;
     return `<div class="blk grp-blk ${root?'root':''}" data-kind="c" data-path="${path}" data-g="${n.op}">
-      <div class="bh">${root?'':HDL}<div class="seg" role="group" aria-label="Tipo de grupo">${['and','or','not'].map(op=>`<button type="button" class="${n.op===op?'on':''}" data-act="g-op" data-path="${path}" data-op="${op}">${OPS[op]}</button>`).join('')}</div>${pickerHTML(`data-zone="c" data-path="${path}"`)}${root?'':`<span class="ba">${condActs(path)}</span>`}</div>
+      <div class="bh">${root?'':HDL}<div class="seg" role="group" aria-label="Tipo de grupo">${['and','or','not'].map(op=>`<button type="button" class="${n.op===op?'on':''}" data-act="g-op" data-path="${path}" data-op="${op}">${OPS[op]}</button>`).join('')}</div>${blkPickerHTML(`data-zone="c" data-path="${path}"`)}${root?'':`<span class="ba">${condActs(path)}</span>`}</div>
       <p class="hint">${EXPL[n.op]}</p>
       <div class="dz" data-zone="c" data-path="${path}">${kids}</div></div>`;
   }
@@ -81,7 +83,7 @@ function viewToggleHTML(){
   return `<div class="vtog"><div class="seg" role="group" aria-label="Vista del editor"><button type="button" class="${b?'on':''}" data-act="ev-view" data-v="blocks">Bloques</button><button type="button" class="${b?'':'on'}" data-act="ev-view" data-v="form">Formulario</button></div><span class="hint">Las dos vistas editan lo mismo.</span></div>`;
 }
 function programHTML(e){
-  const legend=['char','item','skill','stat','emo','team','kill'].map(c=>`<span class="lg k-${c}">${CAT_LBL[c]}</span>`).join('');
+  const legend=['char','item','skill','stat','emo','state','team','kill'].map(c=>`<span class="lg k-${c}">${CAT_LBL[c]}</span>`).join('');
   return `<section class="card sec prog"><h3 class="h3">Programa del evento</h3>
   <p class="hint">Armalo con bloques. El evento solo puede ocurrir si se cumplen las condiciones, y entonces pasan los efectos. Para mover un bloque, arrastralo desde ⠿ (también con el dedo) o usá ▲ ▼. Un grupo puede contener reglas y otros grupos. Una stat que el personaje no tiene vale 0.</p>
   <div class="legend">${legend}</div>

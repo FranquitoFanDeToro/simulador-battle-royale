@@ -238,7 +238,7 @@ td .av{vertical-align:middle;margin-right:8px}
 
 /* ---------- Editor de bloques ---------- */
 .vtog{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-bottom:12px}
-.k-char{--bc:#3B82C4}.k-item{--bc:#C28A1B}.k-skill{--bc:#1C9AA8}.k-stat{--bc:#7A5CC7}.k-emo{--bc:#C2548F}.k-team{--bc:#2E9E6B}.k-kill{--bc:#D1432B}
+.k-char{--bc:#3B82C4}.k-item{--bc:#C28A1B}.k-skill{--bc:#1C9AA8}.k-stat{--bc:#7A5CC7}.k-emo{--bc:#C2548F}.k-team{--bc:#2E9E6B}.k-state{--bc:#E0701E}.k-kill{--bc:#D1432B}
 .legend{display:flex;flex-wrap:wrap;gap:6px}
 .lg{font:600 11px var(--font-mono);padding:2px 8px;border-radius:10px;border-left:5px solid var(--bc);background:var(--surface-2);color:var(--ink-2)}
 .pk{font:600 12px var(--font-mono);color:var(--ink-2);letter-spacing:.04em;margin-top:4px}
