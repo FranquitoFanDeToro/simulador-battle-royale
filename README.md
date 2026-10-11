@@ -73,6 +73,17 @@ Todavía no existen: los escenarios y «dividirse para buscar recursos».
 - **Botones {X}, {Y}…** también en el texto de cada desenlace y en «no sale bien», con vista previa.
 - **Íconos**: las pestañas tienen íconos propios. Para usar tus imágenes, ponelas en `img/` y escribí su ruta en `js/imagenes.js`.
 
+## Novedades de la etapa 8: escenarios
+
+- **Pestaña Escenarios**: cada escenario tiene nombre, ícono (emoji) e imagen, y puede estar **conectado** con otros (las conexiones van en los dos sentidos). Podés marcar uno como «todos empiezan acá»; si no, cada personaje empieza en el que elijas en su ficha o en uno al azar.
+- **Cada personaje está en un escenario**, también los que cayeron (así los eventos con cuerpos siguen funcionando).
+- **En cada evento, sección «Escenarios»**: elegís quiénes tienen que compartir escenario: nadie, todos, o solo algunos por grupos (por ejemplo X con Z, mientras Y está en otro lado). Así «X y Y acordaron encontrarse en {Escenario1}» y «X eliminó a Y con un rifle de francotirador» pueden tener a X e Y en escenarios distintos.
+- **Reglas nuevas**: está en el escenario…, está en el mismo escenario que…, está en uno conectado con el de…, comparte escenario con una cantidad de vivos, está en un escenario con conexiones.
+- **Efectos nuevos**: lleva a un escenario elegido, al azar, a uno conectado o al de otro participante; cualquiera puede mover «con todo su equipo».
+- **Elemento «Escenario»** en los eventos ({Escenario1}): el escenario donde está alguien, uno conectado, uno cualquiera o de una lista.
+- **Simulación más visual**: personajes más grandes, banner con la imagen y el nombre del escenario, fichas con imagen de los objetos, habilidades y estados del evento, panel con quién está en cada escenario y escenario en la ficha y el resumen.
+- Los proyectos viejos se abren igual (sin escenarios).
+
 ## Qué hay en cada archivo
 
 | Archivo | Para qué sirve |
@@ -89,6 +100,7 @@ Todavía no existen: los escenarios y «dividirse para buscar recursos».
 | `js/interfaz-resultado.js` | Sección «Resultado»: probabilidad por bloques y desenlaces. |
 | `js/interfaz-equipos.js` | Pantallas de equipos y vocabulario. |
 | `js/interfaz-nav.js` | Botones anterior / siguiente. |
+| `js/interfaz-escenarios.js` | Pestaña Escenarios, sección de escenarios del evento y panel de la simulación. |
 | `js/iconos.js` | Íconos de la interfaz. |
 | `js/imagenes.js` | Tus imágenes para reemplazar los íconos (opcional). |
 | `img/` | Carpeta para esas imágenes. |

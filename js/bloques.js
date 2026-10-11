@@ -20,6 +20,7 @@ const RULE_CAT={
   state:'state',anystate:'state',
   item:'item',space:'item',teamitem:'item',
   skill:'skill',skillready:'skill',
+  scene:'scene',samescene:'scene',linkedscene:'scene',scenecount:'scene',sceneexit:'scene',
   hasstat:'stat',stat:'stat',statvs:'stat',
   emotion:'emo',
   loyalty:'team',inteam:'team',isleader:'team',sameteam:'team',teamsize:'team'
@@ -28,14 +29,15 @@ const FX_CAT={
   kill:'kill',
   giveItem:'item',removeItem:'item',teamTake:'item',
   giveSkill:'skill',removeSkill:'skill',useSkill:'skill',
+  moveScene:'scene',moveSceneRandom:'scene',moveSceneLinked:'scene',moveSceneWith:'scene',
   stat:'stat',
   emotion:'emo',emotionClear:'emo',
   loyalty:'team',teamForm:'team',teamJoin:'team',teamLeave:'team',teamShare:'team',
   addState:'state',removeState:'state',clearStates:'state',
   moveItem:'item',swapItems:'item',killTeam:'kill',teamFight:'kill'
 };
-const CAT_LBL={char:'Personaje',item:'Objetos',skill:'Habilidades',stat:'Stats',emo:'Emociones',state:'Estados alterados',team:'Equipos y lealtad',kill:'Eliminar'};
-const CAT_ORDER=['char','item','skill','stat','emo','state','team'];
+const CAT_LBL={char:'Personaje',item:'Objetos',skill:'Habilidades',stat:'Stats',emo:'Emociones',state:'Estados alterados',team:'Equipos y lealtad',scene:'Escenarios',kill:'Eliminar'};
+const CAT_ORDER=['char','item','skill','stat','emo','state','team','scene'];
 
 /* ---------- Dibujo ---------- */
 function blkPickerHTML(attrs){
@@ -85,7 +87,7 @@ function viewToggleHTML(){
   return `<div class="vtog"><div class="seg" role="group" aria-label="Vista del editor"><button type="button" class="${b?'on':''}" data-act="ev-view" data-v="blocks">Bloques</button><button type="button" class="${b?'':'on'}" data-act="ev-view" data-v="form">Formulario</button></div><span class="hint">Las dos vistas editan lo mismo.</span></div>`;
 }
 function programHTML(e){
-  const legend=['char','item','skill','stat','emo','state','team','kill'].map(c=>`<span class="lg k-${c}">${CAT_LBL[c]}</span>`).join('');
+  const legend=['char','item','skill','stat','emo','state','team','scene','kill'].map(c=>`<span class="lg k-${c}">${CAT_LBL[c]}</span>`).join('');
   return `<section class="card sec prog"><h3 class="h3">Programa del evento</h3>
   <p class="hint">Armalo con bloques. El evento solo puede ocurrir si se cumplen las condiciones, y entonces pasan los efectos. Para mover un bloque, arrastralo desde ⠿ (también con el dedo) o usá ▲ ▼. Un grupo puede contener reglas y otros grupos. Una stat que el personaje no tiene vale 0.</p>
   <div class="legend">${legend}</div>

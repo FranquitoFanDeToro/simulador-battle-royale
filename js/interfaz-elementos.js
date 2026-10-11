@@ -12,9 +12,9 @@
    participante, tamaño…). No hay límite de elementos por evento.
    ===================================================================== */
 
-const VAR_NOUN={item:'un objeto',skill:'una habilidad',state:'un estado',team:'un equipo'};
-const VAR_PLURAL={item:'objetos',skill:'habilidades',state:'estados',team:'equipos'};
-const VAR_LIST={item:'items',skill:'skills',state:'states'};
+const VAR_NOUN={item:'un objeto',skill:'una habilidad',state:'un estado',team:'un equipo',scene:'un escenario'};
+const VAR_PLURAL={item:'objetos',skill:'habilidades',state:'estados',team:'equipos',scene:'escenarios'};
+const VAR_LIST={item:'items',skill:'skills',state:'states',scene:'scenes'};
 const catsOf=kind=>VAR_LIST[kind]?[...new Set(P[VAR_LIST[kind]].map(i=>i.cat).filter(Boolean))].sort():[];
 /* Elementos que se pueden elegir a mano: los del proyecto (los equipos, solo los armados de antemano). */
 const varChoices=kind=>kind==='team'?P.teams.map(t=>({id:t.id,label:t.name||'Sin nombre'})):P[VAR_LIST[kind]].map(i=>({id:i.id,label:lbl(i)}));
@@ -32,27 +32,29 @@ function varRow(e,v,i){
   const roleChoices=names.map(n=>({id:n,label:n}));
   const roleChips=ids=>ids.map(n=>({id:n,label:n}));
   const field=(label,body)=>`<div class="vf"><span class="vl">${label}</span>${body}</div>`;
-  const isTeam=v.kind==='team';
+  const isTeam=v.kind==='team',isScene=v.kind==='scene';
   let h=`<span class="rl vl">{${esc(v.n)}}</span><span class="hint">${VAR_NOUN[v.kind]}</span><button type="button" class="x" data-act="var-del" data-i="${i}" aria-label="Quitar elemento">✕</button>`;
   let f='';
   /* de dónde sale */
-  const srcOpts=isTeam
+  const srcOpts=isScene
+    ?o('of',v.src,'el escenario donde está un participante')+o('near',v.src,'un escenario conectado con el de un participante')+o('any',v.src,'cualquiera del proyecto')+o('list',v.src,'de una lista elegida a mano')
+    :isTeam
     ?o('of',v.src,'el equipo de un participante')+o('any',v.src,'cualquier equipo de la partida')+o('list',v.src,'equipos elegidos a mano (los armados de antemano)')
     :o('of',v.src,'uno de los que tiene un participante')+o('any',v.src,'cualquiera del proyecto')+o('list',v.src,'de una lista elegida a mano');
-  f+=field('Se elige',sel('var-src','Cómo se elige',srcOpts)+(v.src==='of'?sel('var-role','Participante',roleOpts2(v.role)):''));
+  f+=field('Se elige',sel('var-src','Cómo se elige',srcOpts)+((v.src==='of'||v.src==='near')?sel('var-role','Participante',roleOpts2(v.role)):''));
   if(v.src==='list'){
     const ch=varChoices(v.kind),chips=v.ids.map(id=>({id,label:(ch.find(c=>c.id===id)||{label:'⚠ ya no existe'}).label}));
     f+=field(v.excl?'Todos menos…':'Lista',varChips(i,'ids',chips,ch,'agregar')+`<label class="check sm"><input type="checkbox" data-bind="var-excl" data-i="${i}" ${v.excl?'checked':''}>Todos menos los elegidos</label>`);
   }
   /* filtros */
-  if(!isTeam){
+  if(!isTeam&&!isScene){
     const cats=catsOf(v.kind);
     if(cats.length||v.cats.length) f+=field('Categorías',varChips(i,'cats',v.cats.map(c=>({id:c,label:c||'(sin categoría)'})),cats.filter(c=>c).map(c=>({id:c,label:c})).concat([{id:'',label:'(sin categoría)'}]),'agregar categoría')+(v.cats.length?'':'<span class="hint">todas</span>'));
   }
-  f+=field(isTeam?'Que incluya a':'Que también tenga',varChips(i,'has',roleChips(v.has),roleChoices.filter(r=>!(v.src==='of'&&r.id===v.role)),'agregar participante'));
-  f+=field(isTeam?'Que no incluya a':'Que no tenga',varChips(i,'lacks',roleChips(v.lacks),roleChoices,'agregar participante'));
-  if(v.kind==='item'||isTeam){
-    const sz=v.size,lab=isTeam?'Integrantes vivos':'Tamaño del objeto';
+  f+=field(isScene?'Que sea el escenario de':(isTeam?'Que incluya a':'Que también tenga'),varChips(i,'has',roleChips(v.has),roleChoices.filter(r=>!(v.src==='of'&&r.id===v.role)),'agregar participante'));
+  f+=field(isScene?'Que no sea el escenario de':(isTeam?'Que no incluya a':'Que no tenga'),varChips(i,'lacks',roleChips(v.lacks),roleChoices,'agregar participante'));
+  if(v.kind==='item'||isTeam||isScene){
+    const sz=v.size,lab=isScene?'Personajes vivos presentes':(isTeam?'Integrantes vivos':'Tamaño del objeto');
     f+=field(lab,sel('var-size-op',lab,o('',sz?sz.op:'','sin filtro')+CMP.map(c=>o(c,sz?sz.op:'',CMP_LBL[c])).join(''))+(sz?`<input type="number" step="any" min="0" value="${sz.num}" data-bind="var-size-num" data-i="${i}" aria-label="${lab}: número">`:''));
   }
   if(isTeam) f+=field('Liderazgo',sel('var-leader','Liderazgo',o('',v.leader,'con o sin líder')+o('yes',v.leader,'solo con líder')+o('no',v.leader,'solo sin líder')));

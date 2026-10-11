@@ -46,8 +46,8 @@ function nextRoleName(roles){
   for(let i=0;i<MAX_ROLES;i++) if(!used.has(roleName(i))) return roleName(i);
   return roleName(roles.length);
 }
-const KINDS=['item','space','skill','skillready','gender','status','hasstat','stat','statvs','emotion','loyalty','inteam','isleader','sameteam','teamsize','teamitem','is','state','anystate'];
-const NOVAL=['inteam','isleader','sameteam','teamsize','loyalty','anystate'];   // reglas que no eligen un valor de una lista
+const KINDS=['item','space','skill','skillready','gender','status','hasstat','stat','statvs','emotion','loyalty','inteam','isleader','sameteam','teamsize','teamitem','scene','samescene','linkedscene','scenecount','sceneexit','is','state','anystate'];
+const NOVAL=['inteam','isleader','sameteam','teamsize','loyalty','anystate','samescene','linkedscene','scenecount','sceneexit'];   // reglas que no eligen un valor de una lista
 const CMP=['>=','>','<=','<','=','!='];
 const CMP_LBL={'>=':'≥','>':'>','<=':'≤','<':'<','=':'=','!=':'≠'};
 const FX={
@@ -71,23 +71,27 @@ const FX={
   clearStates:{label:'Quita todos los estados',ref:null,prep:'de'},
   moveItem:{label:'Pasa un objeto',ref:'items',prep:''},
   swapItems:{label:'Intercambia objetos',ref:'items',prep:''},
+  moveScene:{label:'Lleva al escenario',ref:'scenes',prep:'a'},
+  moveSceneRandom:{label:'Lleva a un escenario al azar',ref:null,prep:''},
+  moveSceneLinked:{label:'Lleva a un escenario conectado',ref:null,prep:''},
+  moveSceneWith:{label:'Lleva al escenario de otro participante',ref:null,prep:''},
   killTeam:{label:'Elimina a todo un equipo',ref:'@team',prep:''},
   teamFight:{label:'Dos equipos pelean hasta la muerte',ref:'@team',prep:''}
 };
 /* Elementos de un evento: cosas que el evento elige solo al ocurrir y a las que puede referirse
    en el texto ({Objeto1}) y en los efectos. */
-const VAR_KINDS={item:{pre:'Objeto',lbl:'Objeto'},skill:{pre:'Habilidad',lbl:'Habilidad'},state:{pre:'Estado',lbl:'Estado alterado'},team:{pre:'Equipo',lbl:'Equipo'}};
+const VAR_KINDS={item:{pre:'Objeto',lbl:'Objeto'},skill:{pre:'Habilidad',lbl:'Habilidad'},state:{pre:'Estado',lbl:'Estado alterado'},team:{pre:'Equipo',lbl:'Equipo'},scene:{pre:'Escenario',lbl:'Escenario'}};
 const VAR_NAME_RE=/^[A-Za-zÁÉÍÓÚÑáéíóúñ]{2,}\d+$/;
 const TOKEN_RE=/\{([A-Z]\d*|[A-Za-zÁÉÍÓÚÑáéíóúñ]{2,}\d+)\}/g;
-const VAR_SRC=['of','any','list'];
+const VAR_SRC=['of','any','list','near'];   // near: solo escenarios (uno conectado con el de un participante)
 function nextVarName(list,kind){
   const pre=VAR_KINDS[kind].pre;let k=1;
   while(list.some(v=>v.n===pre+k)) k++;
   return pre+k;
 }
-const TEAM_FX=['teamForm','teamJoin','moveItem','swapItems'];     // efectos que necesitan un segundo participante (campo «by»)
+const TEAM_FX=['teamForm','teamJoin','moveItem','swapItems','moveSceneWith'];     // efectos que necesitan un segundo participante (campo «by»)
 const CHANCE_MODES=['always','fixed','stat','team','loyalty','calc'];
-const MULTI_FX=['kill','giveItem','removeItem','giveSkill','removeSkill','useSkill','stat','emotion','emotionClear','loyalty','teamJoin','teamLeave','teamShare','teamTake','addState','removeState','clearStates'];   // efectos que pueden afectar a varios participantes
+const MULTI_FX=['kill','giveItem','removeItem','giveSkill','removeSkill','useSkill','stat','emotion','emotionClear','loyalty','teamJoin','teamLeave','teamShare','teamTake','moveScene','moveSceneRandom','moveSceneLinked','moveSceneWith','addState','removeState','clearStates'];   // efectos que pueden afectar a varios participantes
 const CHANCE_LBL={
   always:'Siempre ocurre tal cual',
   fixed:'Probabilidad fija',
@@ -125,7 +129,7 @@ function sampleProject(){
   const NM=()=>R('X','sameteam','',true,{role2:'Y'});      // «X no es del mismo equipo que Y»
   const MATES=()=>R('X','sameteam','',false,{role2:'Y'});  // «X es del mismo equipo que Y»
   const proj={
-    v:6,
+    v:7,
     fallback:'{X} pasó el día sin novedades.',
     emotions:[
       {id:M.mi,name:'Miedo',icon:'😨',days:2},
@@ -155,6 +159,14 @@ function sampleProject(){
       ]
     },
     teamPresets:['Alianza del Norte','Los Supervivientes'],
+    scenes:[
+      {id:'sc_claro',name:'Claro central',icon:'🏕️',img:null,links:['sc_bosque','sc_playa']},
+      {id:'sc_bosque',name:'Bosque espeso',icon:'🌲',img:null,links:['sc_claro','sc_cueva','sc_montana']},
+      {id:'sc_playa',name:'Playa',icon:'🏖️',img:null,links:['sc_claro','sc_cueva']},
+      {id:'sc_cueva',name:'Cueva húmeda',icon:'🕳️',img:null,links:['sc_bosque','sc_playa']},
+      {id:'sc_montana',name:'Montaña',icon:'⛰️',img:null,links:['sc_bosque']}
+    ],
+    sceneStart:'sc_claro',
     stats:[{id:T.fu,name:'Fuerza',def:5,min:0,max:10},{id:T.ag,name:'Agilidad',def:5,min:0,max:10},{id:T.ing,name:'Ingenio',def:5,min:0,max:10}],
     items:[
       {id:I.cu,name:'Cuchillo',size:1,cat:'Armas',icon:'🔪',img:null},
@@ -263,6 +275,20 @@ function sampleProject(){
         chance:{mode:'fixed',pct:12,stat:'',steps:[]},fx:[{k:'loyalty',role:'X',mode:'add',num:5},{k:'emotion',role:'X',ref:M.ca}]}]
     })
   );
+  /* escenarios: moverse, encontrarse y actuar a distancia */
+  proj.events.push(
+    E('{X} se internó en {Escenario1}.',4,[X],G('and',R('X','sceneexit')),
+      [{k:'moveScene',role:'X',ref:'@Escenario1',num:0}],
+      {vars:[{n:'Escenario1',kind:'scene',src:'near',role:'X'}]}),
+    E('{X} y {Y} acordaron encontrarse en {Escenario1}.',3,[X,Y],G('and',R('X','samescene','',true,{role2:'Y'})),
+      [{k:'moveScene',role:'X',more:['Y'],ref:'@Escenario1',num:0}],
+      {vars:[{n:'Escenario1',kind:'scene',src:'any',role:'X'}]}),
+    E('{X} le disparó a {Y} con el arco desde otro escenario.',2,[X,Y],G('and',R('X','item',I.ar),R('X','linkedscene','',false,{role2:'Y'}),NM()),[{k:'kill',role:'Y'}]),
+    E('{X} se separó de su equipo y se fue a un escenario conectado.',2,[X],G('and',R('X','inteam'),R('X','sceneexit')),[{k:'moveSceneLinked',role:'X',num:0}]),
+    E('{X} y todo su equipo se mudaron a otro escenario.',1,[Object.assign(rl('X'),{squad:true})],G('and',R('X','inteam'),R('X','sceneexit')),[{k:'moveSceneLinked',role:'X',num:1}])
+  );
+  /* los eventos con varios participantes ocurren solo si están en el mismo escenario (salvo los pensados para ser a distancia) */
+  proj.events.forEach(e=>{if(e.roles.length>=2&&!/acordaron encontrarse|desde otro escenario/.test(e.text))e.sameScene={all:true,groups:[]};});
   proj.teams=[{id:'tm_lobos',name:'Los Lobos',leader:mateo.id,members:[mateo.id,joaquin.id],share:false}];
   return normalize(proj);
 }
@@ -292,6 +318,18 @@ function normRoles(r){
   out[0].req='alive';
   return out;
 }
+/* Qué participantes de un evento tienen que estar en el mismo escenario: todos, o grupos elegidos (cada grupo comparte escenario). */
+function normSameScene(v,roles){
+  const names=roles.map(r=>r.n);
+  const out={all:false,groups:[]};
+  if(!v||typeof v!=='object') return out;
+  out.all=!!v.all;
+  (Array.isArray(v.groups)?v.groups:[]).forEach(g=>{
+    const l=[...new Set((Array.isArray(g)?g:[]).map(String))].filter(r=>names.includes(r));
+    if(l.length>=2) out.groups.push(l);
+  });
+  return out;
+}
 function normalize(p){
   if(!p||typeof p!=='object') return null;
   const arr=a=>Array.isArray(a)?a:[];
@@ -308,10 +346,10 @@ function normalize(p){
       let n=String(v.n||'');
       if(!VAR_NAME_RE.test(n)||out.some(x=>x.n===n)) n=nextVarName(out,v.kind);
       const sz=(v.size&&typeof v.size==='object'&&CMP.includes(v.size.op)&&isFinite(parseFloat(v.size.num)))?{op:v.size.op,num:parseFloat(v.size.num)}:null;
-      out.push({n,kind:v.kind,src:VAR_SRC.includes(v.src)?v.src:'of',role:ROLE_RE.test(String(v.role))?String(v.role):'X',
+      out.push({n,kind:v.kind,src:(VAR_SRC.includes(v.src)&&(v.src!=='near'||v.kind==='scene'))?v.src:'of',role:ROLE_RE.test(String(v.role))?String(v.role):'X',
         has:roleList(v.has),lacks:roleList(v.lacks),                                    // «que X tenga», «que Y no tenga» (acepta el formato viejo: un solo participante)
         cats:strList(v.cats!==undefined?v.cats:v.cat),ids:strList(v.ids),excl:!!v.excl,
-        size:(sz&&(v.kind==='item'||v.kind==='team'))?sz:null,leader:(v.kind==='team'&&['yes','no'].includes(v.leader))?v.leader:''});
+        size:(sz&&(v.kind==='item'||v.kind==='team'||v.kind==='scene'))?sz:null,leader:(v.kind==='team'&&['yes','no'].includes(v.leader))?v.leader:''});
     });
     return out;
   };
@@ -332,7 +370,7 @@ function normalize(p){
       steps:arr(ch.steps).filter(x=>x&&typeof x==='object').map(normStep)
     };
   };
-  const o={v:6,stats:[],items:[],skills:[],emotions:[],states:[],chars:[],teams:[],words:{nouns:[],adjs:[]},teamPresets:[],events:[],fallback:'{X} pasó el día sin novedades.'};
+  const o={v:7,stats:[],items:[],skills:[],emotions:[],states:[],scenes:[],sceneStart:'',chars:[],teams:[],words:{nouns:[],adjs:[]},teamPresets:[],events:[],fallback:'{X} pasó el día sin novedades.'};
   const lim=v=>(v===null||v===undefined||v===''||!isFinite(parseFloat(v)))?null:parseFloat(v);
   const normImg=m=>(m&&m.id&&['file','url','data'].includes(m.kind)&&(m.kind==='file'||safeUrl(m.src)))?{id:String(m.id),kind:m.kind,src:m.kind==='file'?'':String(m.src),tag:''}:null;
   o.stats=arr(p.stats).filter(i=>i&&i.id).map(i=>{
@@ -352,6 +390,12 @@ function normalize(p){
       k:d.k,ref:d.ref?String(d.ref):'',mode:d.mode==='set'?'set':'add',num:num(d.num,d.k==='kill'?1:-1),pct:Math.min(100,Math.max(0,num(d.pct,100)))
     }))
   }));
+  /* escenarios: lugares con nombre e imagen; cada uno puede estar conectado con otros (las conexiones van en los dos sentidos) */
+  const sceneIds=new Set();
+  o.scenes=arr(p.scenes).filter(i=>i&&i.id&&!sceneIds.has(String(i.id))&&sceneIds.add(String(i.id))).map(i=>({id:String(i.id),name:String(i.name||''),icon:String(i.icon||'').slice(0,8),img:normImg(i.img),links:[...new Set(arr(i.links).map(String))]}));
+  o.scenes.forEach(a=>{a.links=a.links.filter(id=>id!==a.id&&sceneIds.has(id));});
+  o.scenes.forEach(a=>a.links.forEach(id=>{const b=o.scenes.find(x=>x.id===id);if(b&&!b.links.includes(a.id))b.links.push(a.id);}));
+  o.sceneStart=sceneIds.has(String(p.sceneStart||''))?String(p.sceneStart):'';
   o.chars=arr(p.chars).filter(c=>c&&c.id).map(c=>{
     let imgs=arr(c.imgs).filter(i=>i&&i.id&&['file','url','data'].includes(i.kind)&&(i.kind==='file'||safeUrl(i.src)))
       .map(i=>({id:String(i.id),kind:i.kind,src:i.kind==='file'?'':String(i.src),tag:String(i.tag||'')}));
@@ -372,7 +416,8 @@ function normalize(p){
       items:arr(c.items).map(String),skills:arr(c.skills).map(String),stats,
       loy:Math.min(100,Math.max(0,num(c.loy,50))),
       emotion:o.emotions.some(m=>m.id===String(c.emotion||''))?String(c.emotion):'',
-      states:[...new Set(arr(c.states).map(String))].filter(id=>o.states.some(s=>s.id===id))
+      states:[...new Set(arr(c.states).map(String))].filter(id=>o.states.some(s=>s.id===id)),
+      scene:sceneIds.has(String(c.scene||''))?String(c.scene):''
     };
   });
   /* equipos: cada personaje en un solo equipo, y el líder tiene que ser miembro */
@@ -389,10 +434,11 @@ function normalize(p){
   o.events=arr(p.events).filter(e=>e&&e.id).map(e=>{
     const cond=normCond(e.cond);
     const seenOut=new Set();
+    const roles=normRoles(e.roles);
     const ev={
       id:String(e.id),text:String(e.text||''),
       weight:Math.min(10,Math.max(1,parseInt(e.weight,10)||3)),
-      roles:normRoles(e.roles),
+      roles,
       cond:(cond&&cond.t==='g')?cond:emptyCond(),
       fx:normFx(e.fx),
       chance:normChance(e.chance,false),
@@ -402,7 +448,8 @@ function normalize(p){
         let id=String(x.id||uid());if(seenOut.has(id)) id=uid();seenOut.add(id);
         return {id,name:String(x.name||'').slice(0,60),text:String(x.text||''),fx:normFx(x.fx),chance:normChance(x.chance,true)};
       }),
-      vars:normVars(e.vars)
+      vars:normVars(e.vars),
+      sameScene:normSameScene(e.sameScene,roles)
     };
     /* los pasos de probabilidad se identifican por su id: no puede repetirse dentro de un evento */
     const seenSt=new Set();
@@ -461,6 +508,26 @@ const and3=(a,b)=>(a===false||b===false)?false:((a===true&&b===true)?true:undefi
 const or3=(a,b)=>(a===true||b===true)?true:((a===false&&b===false)?false:undefined);
 const allOf3=v=>v.reduce(and3,true);
 const anyOf3=v=>v.reduce(or3,false);
+/* Escenarios */
+const sceneDef=id=>(id&&P.scenes.find(s=>s.id===id))||null;
+const sceneName=id=>{const d=sceneDef(id);return d?(d.name||'Sin nombre'):'';};
+const scenesLinked=(a,b)=>{const d=sceneDef(a);return !!d&&!!b&&d.links.includes(b);};
+const sceneAlive=(sim,id)=>sim.chars.filter(c=>c.alive&&c.scene===id).length;
+/* Restricción «mismo escenario» de un evento, armada como reglas extra para que la búsqueda de participantes la use. */
+const _sceneCond=new WeakMap();
+function condFor(e){
+  const ss=e.sameScene;
+  if(!ss||(!ss.all&&!ss.groups.length)) return e.cond;
+  const names=e.roles.map(r=>r.n),groups=ss.all?[names]:ss.groups;
+  const key=JSON.stringify(groups);
+  const h=_sceneCond.get(e);
+  if(h&&h.key===key&&h.cond===e.cond) return h.res;
+  const rules=[];
+  groups.forEach(g=>{const ok=g.filter(r=>names.includes(r));for(let i=1;i<ok.length;i++)rules.push({t:'r',neg:false,role:ok[0],more:[],q:'all',j:'and',kind:'samescene',val:'',op:'>=',num:1,role2:ok[i]});});
+  const res={t:'g',op:'and',j:'and',c:[e.cond].concat(rules)};
+  _sceneCond.set(e,{key,cond:e.cond,res});
+  return res;
+}
 /* Tiempo muerto de una habilidad: sin (se puede repetir todos los días), cada N días o una sola vez. */
 const CD_MODES=['none','days','once'];
 function normCd(c){
@@ -497,6 +564,11 @@ function ruleOne(n,ch,as){
     case 'item': return !!n.val&&ch.items.has(n.val);
     case 'space': {const it=P.items.find(i=>i.id===n.val);return !!it&&slotsFree(ch)>=it.size;}
     case 'skill': return !!n.val&&ch.skills.has(n.val);
+    case 'scene': return !!n.val&&ch.scene===n.val;
+    case 'samescene': {const c2=as[n.role2];return !!c2&&ch.scene===c2.scene;}
+    case 'linkedscene': {const c2=as[n.role2];return !!c2&&scenesLinked(ch.scene,c2.scene);}
+    case 'scenecount': return cmp(CURSIM?sceneAlive(CURSIM,ch.scene):0,n.op,n.num);
+    case 'sceneexit': {const d=sceneDef(ch.scene);return !!d&&d.links.length>0;}
     case 'skillready': return !!n.val&&ch.skills.has(n.val)&&skillReady(ch,n.val);
     case 'gender': return ch.gender===n.val;
     case 'status': return (n.val==='dead')?!ch.alive:ch.alive;
@@ -538,7 +610,7 @@ function ev3(n,as,final){
     return any===undefined?undefined:!any;
   }
   const roles=[n.role].concat(n.more||[]);
-  const needs2=n.kind==='statvs'||n.kind==='sameteam';
+  const needs2=n.kind==='statvs'||n.kind==='sameteam'||n.kind==='samescene'||n.kind==='linkedscene';
   const v=roles.map(r=>{
     const ch=as[r];
     if(!ch) return final?false:undefined;
@@ -560,12 +632,17 @@ function newSim(){
       return {
         id:c.id,name:c.name||'Sin nombre',gender:c.gender,imgs:c.imgs,slots:c.slots,
         items:new Set(okIds(P.items,c.items)),skills:new Set(okIds(P.skills,c.skills)),skillUse:{},stats,
-        loy:c.loy,emotion:c.emotion,emoDay:0,team:null,
+        loy:c.loy,emotion:c.emotion,emoDay:0,team:null,scene:'',
         states:okIds(P.states,c.states||[]).map(id=>({id,day:0})),
         alive:true,kills:0,victims:[],killedBy:null,diedDay:null
       };
     })
   };
+  /* escenario inicial: el propio del personaje, o el de partida del proyecto, o uno al azar */
+  sim.chars.forEach(c=>{
+    const own=(P.chars.find(x=>x.id===c.id)||{}).scene;
+    c.scene=own&&sceneDef(own)?own:(sceneDef(P.sceneStart)?P.sceneStart:(P.scenes.length?P.scenes[Math.floor(Math.random()*P.scenes.length)].id:''));
+  });
   /* equipos armados de antemano: solo cuentan los miembros que participan */
   P.teams.forEach(t=>{
     const ids=t.members.filter(id=>sim.chars.some(c=>c.id===id));
@@ -579,6 +656,7 @@ function newSim(){
 const nameLbl=(o)=>(o.icon?o.icon+' ':'')+(o.name||'Sin nombre');
 function varLabel(kind,id,sim){
   if(kind==='team'){const t=sim&&sim.teams.find(x=>x.id===id);return t?t.name:'';}
+  if(kind==='scene'){const d=sceneDef(id);return d?nameLbl(d):'';}
   const L={item:P.items,skill:P.skills,state:P.states}[kind],o=L&&L.find(x=>x.id===id);
   return o?nameLbl(o):'';
 }
@@ -599,6 +677,19 @@ function varPool(v,as,sim){
     if(v.leader) pool=pool.filter(t=>v.leader==='yes'?!!t.leader:!t.leader);
     return pool.map(t=>t.id);
   }
+  if(v.kind==='scene'){
+    let pool;
+    if(v.src==='of'||v.src==='near'){
+      if(!holder) return null;
+      const d=sceneDef(holder.scene);
+      pool=v.src==='of'?(d?[d.id]:[]):(d?d.links.slice():[]);
+    } else if(v.src==='list') pool=P.scenes.filter(x=>v.excl?!v.ids.includes(x.id):v.ids.includes(x.id)).map(x=>x.id);
+    else pool=P.scenes.map(x=>x.id);
+    (v.has||[]).forEach(r=>{const c=as[r];pool=pool.filter(id=>!!c&&c.scene===id);});
+    (v.lacks||[]).forEach(r=>{const c=as[r];if(c)pool=pool.filter(id=>c.scene!==id);});
+    if(v.size) pool=pool.filter(id=>cmp(sceneAlive(sim,id),v.size.op,v.size.num));
+    return pool;
+  }
   const L={item:P.items,skill:P.skills,state:P.states}[v.kind];
   let ids;
   if(v.src==='of'){
@@ -618,7 +709,7 @@ function varPool(v,as,sim){
 function resolveVars(e,as,sim){
   const vs={};
   if(!e.vars||!e.vars.length) return vs;
-  const chosen={item:new Set(),skill:new Set(),state:new Set(),team:new Set()};
+  const chosen={item:new Set(),skill:new Set(),state:new Set(),team:new Set(),scene:new Set()};
   for(const v of e.vars){
     let pool=varPool(v,as,sim);
     if(!pool) return null;
@@ -641,13 +732,14 @@ function pickAssignment(e,actor,sim,used,ignoreCond){
   });
   if(pools.some(p=>!p.length)) return null;
   const as={}; as[roles[0].n]=actor;
-  if(!ignoreCond&&ev3(e.cond,as,false)===false) return null;
+  const cond=condFor(e);
+  if(!ignoreCond&&ev3(cond,as,false)===false) return null;
   const taken=new Set([actor.id]);
   let budget=4000,found=null;
   const rec=i=>{
     if(found||budget<=0) return;
     if(i===pools.length){
-      if(!(ignoreCond||ev3(e.cond,as,true)===true)) return;
+      if(!(ignoreCond||ev3(cond,as,true)===true)) return;
       const snap=Object.assign({},as);
       const vs=resolveVars(e,snap,sim);              // los elementos del evento (objetos, equipos…) también tienen que existir
       if(!vs) return;
@@ -660,7 +752,7 @@ function pickAssignment(e,actor,sim,used,ignoreCond){
       if(found||budget<=0) return;
       budget--;
       as[rn]=c;taken.add(c.id);
-      if(ignoreCond||ev3(e.cond,as,false)!==false) rec(i+1);
+      if(ignoreCond||ev3(cond,as,false)!==false) rec(i+1);
       taken.delete(c.id);delete as[rn];
     }
   };
@@ -766,6 +858,20 @@ function applyFx(list,as,actor,sim,entry){
       if(slotsFree(t)<sizeOf(f.ref)){entry.notes.push(t.name+' no tenía espacio para '+nameOf(P.items,f.ref)+'.');continue;}
       giver.items.delete(f.ref);t.items.add(f.ref);
       entry.notes.push(t.name+' tomó '+nameOf(P.items,f.ref)+' de '+giver.name+'.');
+    } else if(f.k==='moveScene'||f.k==='moveSceneRandom'||f.k==='moveSceneLinked'||f.k==='moveSceneWith'){
+      const pickOne=l=>l.length?l[Math.floor(Math.random()*l.length)]:'';
+      let dest='',why='';
+      if(f.k==='moveScene'){dest=sceneDef(f.ref)?f.ref:'';why='no hay un escenario elegido';}
+      else if(f.k==='moveSceneWith'){const o=as[f.by];dest=o&&sceneDef(o.scene)?o.scene:'';why='el otro participante no está en ningún escenario';}
+      else if(f.k==='moveSceneRandom'){dest=pickOne(P.scenes.filter(x=>x.id!==t.scene).map(x=>x.id));why='no hay otro escenario';}
+      else{const d=sceneDef(t.scene);dest=pickOne(d?d.links:[]);why='su escenario no tiene conexiones';}
+      if(!dest){entry.notes.push(t.name+' no pudo cambiar de escenario: '+why+'.');continue;}
+      const movers=[t];
+      if(f.num>0){const tm=teamOfIn(sim,t);if(tm)teamMatesIn(sim,tm).forEach(c=>{if(c!==t&&c.alive)movers.push(c);});}
+      const moved=movers.filter(c=>c.scene!==dest);
+      if(!moved.length) continue;
+      moved.forEach(c=>{(entry.moved=entry.moved||[]).push({c,from:c.scene,to:dest});c.scene=dest;});
+      entry.notes.push(moved.map(c=>c.name).join(', ')+(moved.length>1?' fueron':' fue')+' a «'+sceneName(dest)+'».');
     } else if(f.k==='addState'){
       if(!t.alive||!f.ref||!stateDef(f.ref)) continue;
       const ex=t.states.find(x=>x.id===f.ref);
@@ -846,6 +952,7 @@ function chaosShake(sim,level){
     shuffle(P.items.slice()).forEach(it=>{if(Math.random()<0.5&&slotsFree(c)>=it.size)c.items.add(it.id);});
     c.skills=new Set(P.skills.filter(()=>Math.random()<0.4).map(s=>s.id));
     c.skillUse={};
+    if(P.scenes.length) c.scene=P.scenes[Math.floor(Math.random()*P.scenes.length)].id;
     c.loy=Math.floor(Math.random()*101);
     c.states=P.states.filter(()=>Math.random()<0.2).map(x=>({id:x.id,day:sim.day}));
     if(P.emotions.length&&Math.random()<0.6){c.emotion=P.emotions[Math.floor(Math.random()*P.emotions.length)].id;c.emoDay=sim.day;}
@@ -945,6 +1052,34 @@ function tickStates(sim,entries){
   });
 }
 
+/* Dónde ocurre un evento: los escenarios de sus participantes (antes de los efectos) y los elegidos como {Escenario1}. */
+function eventScenes(e,as){
+  const out=[],at=id=>{let g=out.find(x=>x.id===id);if(!g){g={id,who:[]};out.push(g);}return g;};
+  if(!P.scenes.length) return out;
+  e.roles.forEach(r=>{const c=as[r.n];if(c&&sceneDef(c.scene))at(c.scene).who.push(c.id);});
+  const vs=as.vs||{};
+  Object.keys(vs).forEach(n=>{if(vs[n].kind==='scene'&&!out.some(g=>g.id===vs[n].id))at(vs[n].id).dest=true;});
+  return out;
+}
+/* Objetos, habilidades y estados que aparecen en un evento: los elegidos como elementos, los de los efectos y los de las condiciones. */
+function eventElems(e,as,fxList){
+  const out=[],add=(kind,id)=>{
+    const L={item:P.items,skill:P.skills,state:P.states}[kind];
+    if(id&&L&&L.some(x=>x.id===id)&&!out.some(x=>x.kind===kind&&x.id===id)) out.push({kind,id});
+  };
+  const vs=as.vs||{};
+  Object.keys(vs).forEach(n=>add(vs[n].kind,vs[n].id));
+  const rr=r=>(r&&r.charAt(0)==='@')?((vs[r.slice(1)]||{}).id||''):r;
+  const FK={giveItem:'item',removeItem:'item',teamTake:'item',moveItem:'item',swapItems:'item',giveSkill:'skill',removeSkill:'skill',useSkill:'skill',addState:'state',removeState:'state'};
+  (fxList||[]).forEach(f=>{const k=FK[f.k];if(k){add(k,rr(f.ref));if(f.k==='swapItems')add(k,rr(f.ref2));}});
+  const RK={item:'item',teamitem:'item',skill:'skill',skillready:'skill',state:'state'};
+  const walk=(n,neg)=>{
+    if(n.t==='g'){n.c.forEach(c=>walk(c,neg||n.op==='not'));return;}
+    if(RK[n.kind]&&!n.neg&&!neg) add(RK[n.kind],n.val);
+  };
+  walk(e.cond,false);
+  return out;
+}
 function playDay(sim,opts){
   if(sim.over) return;
   opts=opts||{};
@@ -996,7 +1131,9 @@ function playDay(sim,opts){
       who:Object.keys(as).map(k=>({c:as[k],src:lookFor(as[k],roleLook(e,k))})),
       groups,deaths:[],notes:[],
       chance:(!(e.outs&&e.outs.length)&&e.chance&&e.chance.mode!=='always')?Math.round(successChance(e,as)*100):null,
-      outcome:(e.outs&&e.outs.length)?{name:oc.out?(oc.out.name.trim()||'Desenlace extra'):(oc.fail?'No sale bien':'Sale bien'),pct:oc.pct}:null
+      outcome:(e.outs&&e.outs.length)?{name:oc.out?(oc.out.name.trim()||'Desenlace extra'):(oc.fail?'No sale bien':'Sale bien'),pct:oc.pct}:null,
+      scenes:eventScenes(e,as),
+      elems:eventElems(e,as,oc.out?oc.out.fx:(oc.fail?e.fxFail:e.fx))
     };
     markSkillRules(e,as,sim);
     applyFx(oc.out?oc.out.fx:(oc.fail?e.fxFail:e.fx),as,actor,sim,entry);
