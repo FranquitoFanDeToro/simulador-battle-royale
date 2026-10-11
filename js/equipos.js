@@ -44,12 +44,14 @@ function joinTeam(sim,ch,t){
   t.members.push(ch.id);
   ch.team=t.id;
 }
-function formTeam(sim,a,b,nameMode,aLeads){
-  const t={id:uid(),name:nameForNewTeam(sim,nameMode),leader:aLeads?a.id:'',members:[a.id,b.id],share:false};
+/* Arma un equipo con cualquier cantidad de integrantes; el primero lidera si `firstLeads`. */
+function formTeamN(sim,list,nameMode,firstLeads){
+  const t={id:uid(),name:nameForNewTeam(sim,nameMode),leader:firstLeads?list[0].id:'',members:list.map(c=>c.id),share:false};
   sim.teams.push(t);
-  a.team=t.id;b.team=t.id;
+  list.forEach(c=>{c.team=t.id;});
   return t;
 }
+const formTeam=(sim,a,b,nameMode,aLeads)=>formTeamN(sim,[a,b],nameMode,aLeads);
 
 /* ---------- Nombres ---------- */
 const ART={sm:'el',sf:'la',pm:'los',pf:'las'};

@@ -73,7 +73,8 @@ function vStateForm(st){
   <section class="card sec"><h3 class="h3">Ficha</h3>
   <div class="two"><div style="flex:2 1 200px"><label for="s-name">Nombre</label><input type="text" id="s-name" value="${esc(st.name)}" data-bind="state-name" autocomplete="off"></div>
   <div><label for="s-icon">Ícono</label><input type="text" id="s-icon" maxlength="8" value="${esc(st.icon)}" data-bind="state-icon" autocomplete="off" style="max-width:90px"></div>
-  <div><label for="s-days">Dura (días, 0 = no se acaba solo)</label><input type="number" id="s-days" min="0" value="${st.days}" data-bind="state-days"></div></div>
+  <div><label for="s-days">Dura (días, 0 = no se acaba solo)</label><input type="number" id="s-days" min="0" value="${st.days}" data-bind="state-days"></div>
+  <div><label for="s-cat">Categoría (opcional)</label><input type="text" id="s-cat" list="cats-states" value="${esc(st.cat||'')}" data-bind="state-cat" autocomplete="off" style="max-width:170px"><datalist id="cats-states">${[...new Set(P.states.map(x=>x.cat).filter(Boolean))].sort().map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div></div>
   <p class="hint">Un estado de N días actúa durante los N días siguientes a aquel en que se aplicó y después se va solo. Con 0 dura hasta que un evento lo quite.</p>
   <label class="pick" style="display:inline-flex;margin:0"><span style="display:inline-flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;font:500 14px var(--font-body);color:var(--ink);background:var(--surface-2);border-radius:6px;padding:6px 10px"><input type="checkbox" data-bind="state-canact" ${st.canAct?'checked':''}>Puede actuar con normalidad</span></label>
   <p class="hint">Si lo desmarcás, mientras tenga este estado el personaje no puede protagonizar eventos por su cuenta (sigue pudiendo ser blanco de los demás). Sirve para parálisis, sueño o aturdimiento.</p>
@@ -92,7 +93,7 @@ function vStateForm(st){
 
 Object.assign(ACT,{
   'state-new'(){
-    const st={id:uid(),name:'',icon:'',days:3,canAct:true,text:'',mods:[],daily:[]};
+    const st={id:uid(),name:'',icon:'',cat:'',days:3,canAct:true,text:'',mods:[],daily:[]};
     P.states.push(st);ui.state=st.id;structural();window.scrollTo(0,0);
     const f=$('#s-name');if(f)f.focus();
   },
@@ -118,6 +119,7 @@ Object.assign(ACT,{
 const numOr=(t,d)=>{const v=parseFloat(t.value);return isFinite(v)?v:d;};
 Object.assign(BIND,{
   'state-name'(t){const st=curState();if(st){st.name=t.value;touch();}},
+  'state-cat'(t){const st=curState();if(st){st.cat=t.value.trim();touch();}},
   'state-icon'(t){const st=curState();if(st){st.icon=t.value.trim();touch();}},
   'state-days'(t){const st=curState();const v=parseInt(t.value,10);if(st&&!isNaN(v)){st.days=Math.max(0,v);touch();}},
   'state-canact'(t){const st=curState();if(st){st.canAct=t.checked;structural();}},

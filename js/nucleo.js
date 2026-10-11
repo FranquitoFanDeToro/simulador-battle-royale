@@ -4,12 +4,12 @@
    No toca la pantalla. Todo lo que el usuario crea vive en el objeto P:
 
    P = {
-     v: 5,
+     v: 6,
      stats:    [{id, name, def, min, max}]           catálogo de stats (min/max: límite propio; null = sin límite)
      items:    [{id, name, size, cat, icon, img}]    objetos (size = espacio; icon = emoji; img = imagen opcional)
      skills:   [{id, name, cat, icon, img}]          habilidades
      emotions: [{id, name, icon, days}]              emociones (days: se pasa sola; 0 = no)
-     states:   [{id, name, icon, days, canAct, text,  estados alterados (quemadura, veneno…)
+     states:   [{id, name, icon, cat, days, canAct, text,  estados alterados (quemadura, veneno…)
                  mods:[{stat, mode:'add'|'mult', num}],     cambian stats mientras dura
                  daily:[{k:'stat'|'loyalty'|'kill', ref, mode, num, pct}]}]  efectos de cada día
      chars:    [{id, name, gender, enabled, slots,   personajes
@@ -19,19 +19,33 @@
      teams:    [{id, name, leader, members:[ids], share}]   equipos que existen desde el día 1
      words:    {nouns:[{id,text,num,gen}], adjs:[...]}      vocabulario del generador de nombres
      teamPresets: [texto]                            nombres de equipo preestablecidos
-     events:   [{id, text, weight, roles:[{n, req, look}],
+     events:   [{id, text, weight, roles:[{n, req, look, squad}],     participantes: X, Y, Z, W, A, B… (sin límite)
                  cond:{...árbol de reglas...}, fx:[efectos],
-                 chance:{mode, pct, stat}, failText, fxFail:[efectos],
+                 chance:{mode, pct, stat, steps:[…]}, failText, fxFail:[efectos],   desenlace «sale bien» / «no sale bien»
+                 outs:[{id, name, text, fx, chance}],                    desenlaces extra, cada uno con su probabilidad
                  vars:[{n:'Objeto1', kind:'item'|'skill'|'state'|'team',   elementos que el evento elige solo:
-                        src:'of'|'any', role, lacks, cat}]}]              «un objeto de Y que X no tenga», «un equipo cualquiera»…
+                        src:'of'|'any'|'list', role, has:[roles], lacks:[roles],
+                        cats:[categorías], ids:[elegidos a mano], excl, size, leader}]}]
    }
+   Condiciones: una regla puede aplicarse a varios participantes (role + more, q='all'|'any') y un grupo
+   puede ser «mix»: sus hijos se unen con Y u O (child.j) y la Y se resuelve antes que la O.
+   Efectos: casi todos pueden afectar a varios participantes a la vez (role + more).
    ===================================================================== */
 
 const uid=()=>Math.random().toString(36).slice(2,9);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 const GEN={f:'Femenino',m:'Masculino',o:'Otro'};
-const ROLE_NAMES=['X','Y','Z','W'];
+/* Los participantes de un evento se llaman X, Y, Z, W, A, B… (26 nombres); pasado ese punto siguen X1, Y1… */
+const ROLE_ORDER='XYZWABCDEFGHIJKLMNOPQRSTUV';
+const roleName=i=>i<26?ROLE_ORDER[i]:ROLE_ORDER[i%26]+Math.floor(i/26);
+const ROLE_RE=/^[A-Z][0-9]*$/;
+const MAX_ROLES=500;
+function nextRoleName(roles){
+  const used=new Set(roles.map(r=>r.n));
+  for(let i=0;i<MAX_ROLES;i++) if(!used.has(roleName(i))) return roleName(i);
+  return roleName(roles.length);
+}
 const KINDS=['item','space','skill','gender','status','hasstat','stat','statvs','emotion','loyalty','inteam','isleader','sameteam','teamsize','teamitem','is','state','anystate'];
 const NOVAL=['inteam','isleader','sameteam','teamsize','loyalty','anystate'];   // reglas que no eligen un valor de una lista
 const CMP=['>=','>','<=','<','=','!='];
@@ -62,23 +76,27 @@ const FX={
 /* Elementos de un evento: cosas que el evento elige solo al ocurrir y a las que puede referirse
    en el texto ({Objeto1}) y en los efectos. */
 const VAR_KINDS={item:{pre:'Objeto',lbl:'Objeto'},skill:{pre:'Habilidad',lbl:'Habilidad'},state:{pre:'Estado',lbl:'Estado alterado'},team:{pre:'Equipo',lbl:'Equipo'}};
-const MAX_VARS=6;
-const VAR_NAME_RE=/^[A-Za-zÁÉÍÓÚÑáéíóúñ]+\d+$/;
-const TOKEN_RE=/\{([A-Z]|[A-Za-zÁÉÍÓÚÑáéíóúñ]+\d+)\}/g;
+const VAR_NAME_RE=/^[A-Za-zÁÉÍÓÚÑáéíóúñ]{2,}\d+$/;
+const TOKEN_RE=/\{([A-Z]\d*|[A-Za-zÁÉÍÓÚÑáéíóúñ]{2,}\d+)\}/g;
+const VAR_SRC=['of','any','list'];
 function nextVarName(list,kind){
   const pre=VAR_KINDS[kind].pre;let k=1;
   while(list.some(v=>v.n===pre+k)) k++;
   return pre+k;
 }
 const TEAM_FX=['teamForm','teamJoin','moveItem','swapItems'];     // efectos que necesitan un segundo participante (campo «by»)
-const CHANCE_MODES=['always','fixed','stat','team','loyalty'];
+const CHANCE_MODES=['always','fixed','stat','team','loyalty','calc'];
+const MULTI_FX=['kill','giveItem','removeItem','giveSkill','removeSkill','stat','emotion','emotionClear','loyalty','teamJoin','teamLeave','teamShare','teamTake','addState','removeState','clearStates'];   // efectos que pueden afectar a varios participantes
 const CHANCE_LBL={
   always:'Siempre ocurre tal cual',
   fixed:'Probabilidad fija',
   stat:'Según una stat de X contra Y',
   team:'Según el tamaño del equipo de X contra el de Y',
-  loyalty:'Según la lealtad de X (menos lealtad, más probabilidad)'
+  loyalty:'Según la lealtad de X (menos lealtad, más probabilidad)',
+  calc:'Calculada con bloques (se evalúan varias cosas)'
 };
+const STEP_OPS=['add','mult','set'];
+const STEP_KINDS=['num','stat','statdiff','loyalty','teamsize','teamdiff'];
 const DEFAULT_SLOTS=5;
 let P=null;
 let CURSIM=null;   // simulación en curso: las reglas de equipo la consultan
@@ -106,7 +124,7 @@ function sampleProject(){
   const NM=()=>R('X','sameteam','',true,{role2:'Y'});      // «X no es del mismo equipo que Y»
   const MATES=()=>R('X','sameteam','',false,{role2:'Y'});  // «X es del mismo equipo que Y»
   const proj={
-    v:5,
+    v:6,
     fallback:'{X} pasó el día sin novedades.',
     emotions:[
       {id:M.mi,name:'Miedo',icon:'😨',days:2},
@@ -222,29 +240,54 @@ function sampleProject(){
       [{k:'teamFight',role:'X',ref:'@Equipo1',ref2:'@Equipo2'}],
       {vars:[V('Equipo1','team','of','X'),V('Equipo2','team','any')]})
   );
+  /* participantes sin límite, Y/O mezclados, probabilidad con varios factores y más de dos desenlaces */
+  const Z=rl('Z');
+  proj.events.push(
+    E('{X}, {Y} y {Z} sellaron un pacto y formaron un equipo.',2,[X,Y,Z],G('and',R('X','inteam','',true,{more:['Y','Z']})),
+      [{k:'teamForm',role:'X',by:'Y',more:['Z'],nm:'any',num:1}]),
+    E('{X} cruzó el río sin que nadie lo viera.',2,[X],
+      {t:'g',op:'mix',c:[R('X','skill',K.si),R('X','stat',T.ag,false,{op:'>=',num:7,j:'or'}),R('X','state',A.at,true,{j:'and'})]}),
+    E('{X} y todo su equipo hicieron guardia durante la noche.',2,[Object.assign(rl('X'),{squad:true})],G('and',R('X','inteam'))),
+    E('{X} encontró {Objeto1} entre los restos de un campamento.',2,[X],emptyCond(),
+      [{k:'giveItem',role:'X',ref:'@Objeto1'}],
+      {vars:[{n:'Objeto1',kind:'item',src:'any',role:'X',lacks:['X'],cats:['Armas']}]}),
+    E('{X} cazó una presa pequeña.',2,[X],G('and',R('X','item',I.ar)),[{k:'emotion',role:'X',ref:M.ca}],{
+      chance:{mode:'calc',pct:35,stat:'',steps:[
+        {id:'st1',cond:G('and',R('X','skill',K.pu)),op:'add',kind:'num',num:25,stat:'',role:'X',role2:'Y'},
+        {id:'st2',cond:G('and'),op:'add',kind:'stat',num:3,stat:T.ag,role:'X',role2:'Y'},
+        {id:'st3',cond:G('and',R('X','anystate')),op:'mult',kind:'num',num:0.5,stat:'',role:'X',role2:'Y'}
+      ]},
+      failText:'{X} volvió de la cacería con las manos vacías.',fxFail:[{k:'emotion',role:'X',ref:M.tr}],
+      outs:[{id:'out1',name:'Gran cacería',text:'{X} cazó un ciervo enorme y todos hablarán de eso.',
+        chance:{mode:'fixed',pct:12,stat:'',steps:[]},fx:[{k:'loyalty',role:'X',mode:'add',num:5},{k:'emotion',role:'X',ref:M.ca}]}]
+    })
+  );
   proj.teams=[{id:'tm_lobos',name:'Los Lobos',leader:mateo.id,members:[mateo.id,joaquin.id],share:false}];
-  return proj;
+  return normalize(proj);
 }
 
 /* ---------- Normalizar (también migra proyectos de la versión 1) ---------- */
+const roleList=(l,not)=>[...new Set((Array.isArray(l)?l:(l?[l]:[])).map(String).filter(r=>ROLE_RE.test(r)&&r!==not))];   // acepta un solo nombre (formato viejo) o una lista
 function normCond(c){
   if(!c||typeof c!=='object') return null;
+  const j=c.j==='or'?'or':'and';          // cómo se une a la regla o grupo anterior (solo en grupos «mix»)
   if(c.t==='g'){
-    return {t:'g',op:['and','or','not'].includes(c.op)?c.op:'and',c:(Array.isArray(c.c)?c.c:[]).map(normCond).filter(Boolean)};
+    return {t:'g',op:['and','or','not','mix'].includes(c.op)?c.op:'and',j,c:(Array.isArray(c.c)?c.c:[]).map(normCond).filter(Boolean)};
   }
   if(c.t==='r'){
-    const n=parseFloat(c.num);
+    const n=parseFloat(c.num),role=String(c.role||'X');
     return {
-      t:'r',neg:!!c.neg,role:String(c.role||'X'),kind:KINDS.includes(c.kind)?c.kind:'item',
+      t:'r',neg:!!c.neg,role,more:roleList(c.more,role),q:c.q==='any'?'any':'all',j,kind:KINDS.includes(c.kind)?c.kind:'item',
       val:c.val==null?'':String(c.val),op:CMP.includes(c.op)?c.op:'>=',num:isFinite(n)?n:1,role2:String(c.role2||'Y')
     };
   }
   return null;
 }
 function normRoles(r){
-  let out=(Array.isArray(r)?r:[]).filter(x=>x&&ROLE_NAMES.includes(x.n)).slice(0,4)
-    .map(x=>({n:x.n,req:['alive','dead','any'].includes(x.req)?x.req:'alive',look:String(x.look||'')}));
-  if(!out.length) out=[{n:'X',req:'alive',look:''}];
+  const seen=new Set();
+  let out=(Array.isArray(r)?r:[]).filter(x=>x&&ROLE_RE.test(String(x.n))&&!seen.has(x.n)&&seen.add(x.n)).slice(0,MAX_ROLES)
+    .map(x=>({n:x.n,req:['alive','dead','any'].includes(x.req)?x.req:'alive',look:String(x.look||''),squad:!!x.squad}));
+  if(!out.length) out=[{n:'X',req:'alive',look:'',squad:false}];
   out[0].req='alive';
   return out;
 }
@@ -253,21 +296,42 @@ function normalize(p){
   const arr=a=>Array.isArray(a)?a:[];
   const num=(v,d)=>{v=parseFloat(v);return isFinite(v)?v:d;};
   const normFx=l=>arr(l).filter(f=>f&&FX[f.k]).map(f=>({
-    k:f.k,role:String(f.role||'X'),ref:f.ref?String(f.ref):'',ref2:f.ref2?String(f.ref2):'',by:String(f.by||''),
+    k:f.k,role:String(f.role||'X'),more:roleList(f.more,String(f.role||'X')),ref:f.ref?String(f.ref):'',ref2:f.ref2?String(f.ref2):'',by:String(f.by||''),
     mode:f.mode==='set'?'set':'add',num:num(f.num,1),nm:['gen','preset','any'].includes(f.nm)?f.nm:'any'
   }));
+  const strList=x=>[...new Set((Array.isArray(x)?x:(x?[x]:[])).map(String).filter(Boolean))];
   const normVars=l=>{
     const out=[];
     arr(l).forEach(v=>{
-      if(!v||!VAR_KINDS[v.kind]||out.length>=MAX_VARS) return;
+      if(!v||!VAR_KINDS[v.kind]) return;
       let n=String(v.n||'');
       if(!VAR_NAME_RE.test(n)||out.some(x=>x.n===n)) n=nextVarName(out,v.kind);
-      out.push({n,kind:v.kind,src:v.src==='any'?'any':'of',role:ROLE_NAMES.includes(v.role)?v.role:'X',
-        lacks:ROLE_NAMES.includes(v.lacks)?v.lacks:'',cat:(v.kind==='item'||v.kind==='skill')?String(v.cat||''):''});
+      const sz=(v.size&&typeof v.size==='object'&&CMP.includes(v.size.op)&&isFinite(parseFloat(v.size.num)))?{op:v.size.op,num:parseFloat(v.size.num)}:null;
+      out.push({n,kind:v.kind,src:VAR_SRC.includes(v.src)?v.src:'of',role:ROLE_RE.test(String(v.role))?String(v.role):'X',
+        has:roleList(v.has),lacks:roleList(v.lacks),                                    // «que X tenga», «que Y no tenga» (acepta el formato viejo: un solo participante)
+        cats:strList(v.cats!==undefined?v.cats:v.cat),ids:strList(v.ids),excl:!!v.excl,
+        size:(sz&&(v.kind==='item'||v.kind==='team'))?sz:null,leader:(v.kind==='team'&&['yes','no'].includes(v.leader))?v.leader:''});
     });
     return out;
   };
-  const o={v:5,stats:[],items:[],skills:[],emotions:[],states:[],chars:[],teams:[],words:{nouns:[],adjs:[]},teamPresets:[],events:[],fallback:'{X} pasó el día sin novedades.'};
+  const normStep=s=>{
+    const cond=normCond(s&&s.cond),op=STEP_OPS.includes(s&&s.op)?s.op:'add';
+    return {
+      id:String((s&&s.id)||'').replace(/[^A-Za-z0-9]/g,'')||uid(),cond:(cond&&cond.t==='g')?cond:emptyCond(),op,
+      kind:(op==='add'&&STEP_KINDS.includes(s&&s.kind))?s.kind:'num',num:num(s&&s.num,op==='mult'?1:10),
+      stat:String((s&&s.stat)||''),role:ROLE_RE.test(String(s&&s.role))?String(s.role):'X',role2:ROLE_RE.test(String(s&&s.role2))?String(s.role2):'Y'
+    };
+  };
+  const normChance=(ch,extra)=>{
+    ch=(ch&&typeof ch==='object')?ch:{};
+    const modes=extra?CHANCE_MODES.filter(m=>m!=='always'):CHANCE_MODES;
+    return {
+      mode:modes.includes(ch.mode)?ch.mode:(extra?'fixed':'always'),
+      pct:Math.min(100,Math.max(0,num(ch.pct,50))),stat:String(ch.stat||''),
+      steps:arr(ch.steps).filter(x=>x&&typeof x==='object').map(normStep)
+    };
+  };
+  const o={v:6,stats:[],items:[],skills:[],emotions:[],states:[],chars:[],teams:[],words:{nouns:[],adjs:[]},teamPresets:[],events:[],fallback:'{X} pasó el día sin novedades.'};
   const lim=v=>(v===null||v===undefined||v===''||!isFinite(parseFloat(v)))?null:parseFloat(v);
   const normImg=m=>(m&&m.id&&['file','url','data'].includes(m.kind)&&(m.kind==='file'||safeUrl(m.src)))?{id:String(m.id),kind:m.kind,src:m.kind==='file'?'':String(m.src),tag:''}:null;
   o.stats=arr(p.stats).filter(i=>i&&i.id).map(i=>{
@@ -280,7 +344,7 @@ function normalize(p){
   o.skills=arr(p.skills).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),cat:String(i.cat||''),icon:String(i.icon||'').slice(0,8),img:normImg(i.img)}));
   o.emotions=arr(p.emotions).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),icon:String(i.icon||'').slice(0,8),days:Math.max(0,Math.floor(num(i.days,0)))}));
   o.states=arr(p.states).filter(i=>i&&i.id).map(i=>({
-    id:String(i.id),name:String(i.name||''),icon:String(i.icon||'').slice(0,8),days:Math.max(0,Math.floor(num(i.days,0))),
+    id:String(i.id),name:String(i.name||''),icon:String(i.icon||'').slice(0,8),cat:String(i.cat||''),days:Math.max(0,Math.floor(num(i.days,0))),
     canAct:i.canAct!==false,text:String(i.text||''),
     mods:arr(i.mods).filter(m=>m&&m.stat).map(m=>({stat:String(m.stat),mode:m.mode==='mult'?'mult':'add',num:num(m.num,m.mode==='mult'?1:0)})),
     daily:arr(i.daily).filter(d=>d&&['stat','loyalty','kill'].includes(d.k)).map(d=>({
@@ -323,21 +387,26 @@ function normalize(p){
   o.teamPresets=arr(p.teamPresets).map(s=>String(s).trim()).filter(Boolean);
   o.events=arr(p.events).filter(e=>e&&e.id).map(e=>{
     const cond=normCond(e.cond);
-    const ch=(e.chance&&typeof e.chance==='object')?e.chance:{};
-    return {
+    const seenOut=new Set();
+    const ev={
       id:String(e.id),text:String(e.text||''),
       weight:Math.min(10,Math.max(1,parseInt(e.weight,10)||3)),
       roles:normRoles(e.roles),
       cond:(cond&&cond.t==='g')?cond:emptyCond(),
       fx:normFx(e.fx),
-      chance:{
-        mode:CHANCE_MODES.includes(ch.mode)?ch.mode:'always',
-        pct:Math.min(100,Math.max(0,num(ch.pct,50))),stat:String(ch.stat||'')
-      },
+      chance:normChance(e.chance,false),
       failText:String(e.failText||''),
       fxFail:normFx(e.fxFail),
+      outs:arr(e.outs).filter(x=>x&&typeof x==='object').map(x=>{
+        let id=String(x.id||uid());if(seenOut.has(id)) id=uid();seenOut.add(id);
+        return {id,name:String(x.name||'').slice(0,60),text:String(x.text||''),fx:normFx(x.fx),chance:normChance(x.chance,true)};
+      }),
       vars:normVars(e.vars)
     };
+    /* los pasos de probabilidad se identifican por su id: no puede repetirse dentro de un evento */
+    const seenSt=new Set();
+    [ev.chance].concat(ev.outs.map(x=>x.chance)).forEach(c=>c.steps.forEach(st=>{if(seenSt.has(st.id))st.id=uid();seenSt.add(st.id);}));
+    return ev;
   });
   if(typeof p.fallback==='string'&&p.fallback.trim()) o.fallback=p.fallback;
   return o;
@@ -384,38 +453,69 @@ function cmp(a,op,b){
 /* ---------- Motor ---------- */
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));const t=a[i];a[i]=a[j];a[j]=t;}return a;}
 
-function evalNode(n,as){
-  if(n.t==='g'){
-    if(!n.c.length) return true;
-    if(n.op==='and') return n.c.every(c=>evalNode(c,as));
-    if(n.op==='or') return n.c.some(c=>evalNode(c,as));
-    return !n.c.some(c=>evalNode(c,as));
-  }
-  const ch=as[n.role];
-  if(!ch) return false;
-  let v=false;
+/* Condiciones. ev3 evalúa con lógica de tres valores: true, false o undefined («todavía no se sabe»,
+   porque falta asignar algún participante). Así la búsqueda de participantes puede descartar combinaciones
+   a medio armar sin probarlas todas. Con `final` (todos asignados) lo que falta cuenta como falso. */
+const and3=(a,b)=>(a===false||b===false)?false:((a===true&&b===true)?true:undefined);
+const or3=(a,b)=>(a===true||b===true)?true:((a===false&&b===false)?false:undefined);
+const allOf3=v=>v.reduce(and3,true);
+const anyOf3=v=>v.reduce(or3,false);
+function ruleOne(n,ch,as){
   switch(n.kind){
-    case 'item': v=!!n.val&&ch.items.has(n.val); break;
-    case 'space': {const it=P.items.find(i=>i.id===n.val);v=!!it&&slotsFree(ch)>=it.size;break;}
-    case 'skill': v=!!n.val&&ch.skills.has(n.val); break;
-    case 'gender': v=ch.gender===n.val; break;
-    case 'status': v=(n.val==='dead')?!ch.alive:ch.alive; break;
-    case 'hasstat': v=!!n.val&&hasStat(ch,n.val); break;
-    case 'stat': v=!!n.val&&cmp(statVal(ch,n.val),n.op,n.num); break;
-    case 'statvs': {const c2=as[n.role2];v=!!n.val&&!!c2&&cmp(statVal(ch,n.val),n.op,statVal(c2,n.val));break;}
-    case 'emotion': v=!!n.val&&ch.emotion===n.val; break;
-    case 'loyalty': v=cmp(ch.loy,n.op,n.num); break;
-    case 'inteam': v=!!teamOf(ch); break;
-    case 'isleader': {const t=teamOf(ch);v=!!t&&t.leader===ch.id;break;}
-    case 'sameteam': {const c2=as[n.role2];v=!!c2&&!!ch.team&&ch.team===c2.team;break;}
-    case 'teamsize': {const t=teamOf(ch);v=cmp(t?t.members.length:0,n.op,n.num);break;}
-    case 'teamitem': v=!!n.val&&hasItemOrShared(ch,n.val); break;
-    case 'is': v=!!n.val&&ch.id===n.val; break;
-    case 'state': v=hasState(ch,n.val); break;
-    case 'anystate': v=(ch.states||[]).length>0; break;
+    case 'item': return !!n.val&&ch.items.has(n.val);
+    case 'space': {const it=P.items.find(i=>i.id===n.val);return !!it&&slotsFree(ch)>=it.size;}
+    case 'skill': return !!n.val&&ch.skills.has(n.val);
+    case 'gender': return ch.gender===n.val;
+    case 'status': return (n.val==='dead')?!ch.alive:ch.alive;
+    case 'hasstat': return !!n.val&&hasStat(ch,n.val);
+    case 'stat': return !!n.val&&cmp(statVal(ch,n.val),n.op,n.num);
+    case 'statvs': {const c2=as[n.role2];return !!n.val&&!!c2&&cmp(statVal(ch,n.val),n.op,statVal(c2,n.val));}
+    case 'emotion': return !!n.val&&ch.emotion===n.val;
+    case 'loyalty': return cmp(ch.loy,n.op,n.num);
+    case 'inteam': return !!teamOf(ch);
+    case 'isleader': {const t=teamOf(ch);return !!t&&t.leader===ch.id;}
+    case 'sameteam': {const c2=as[n.role2];return !!c2&&!!ch.team&&ch.team===c2.team;}
+    case 'teamsize': {const t=teamOf(ch);return cmp(t?t.members.length:0,n.op,n.num);}
+    case 'teamitem': return !!n.val&&hasItemOrShared(ch,n.val);
+    case 'is': return !!n.val&&ch.id===n.val;
+    case 'state': return hasState(ch,n.val);
+    case 'anystate': return (ch.states||[]).length>0;
   }
-  return n.neg?!v:v;
+  return false;
 }
+function ev3(n,as,final){
+  if(n.t==='g'){
+    const c=n.c;
+    if(!c.length) return true;
+    if(n.op==='mix'){
+      /* los hijos se unen con Y u O; la Y se resuelve antes que la O: «A y B o C» es «(A y B) o C» */
+      let res=false,cur;
+      c.forEach((ch,i)=>{
+        const v=ev3(ch,as,final);
+        if(i===0) cur=v;
+        else if(ch.j==='or'){res=or3(res,cur);cur=v;}
+        else cur=and3(cur,v);
+      });
+      return or3(res,cur);
+    }
+    const v=c.map(ch=>ev3(ch,as,final));
+    if(n.op==='and') return allOf3(v);
+    if(n.op==='or') return anyOf3(v);
+    const any=anyOf3(v);   // not: ninguna se cumple
+    return any===undefined?undefined:!any;
+  }
+  const roles=[n.role].concat(n.more||[]);
+  const needs2=n.kind==='statvs'||n.kind==='sameteam';
+  const v=roles.map(r=>{
+    const ch=as[r];
+    if(!ch) return final?false:undefined;
+    if(needs2&&!as[n.role2]&&!final) return undefined;
+    const b=ruleOne(n,ch,as);
+    return n.neg?!b:b;
+  });
+  return n.q==='any'?anyOf3(v):allOf3(v);
+}
+const evalNode=(n,as)=>ev3(n,as,true)===true;
 
 function newSim(){
   const okIds=(list,ids)=>ids.filter(id=>list.some(i=>i.id===id));
@@ -449,6 +549,37 @@ function varLabel(kind,id,sim){
   const L={item:P.items,skill:P.skills,state:P.states}[kind],o=L&&L.find(x=>x.id===id);
   return o?nameLbl(o):'';
 }
+/* Todos los elementos que cumplen lo que pide el evento para {Nombre}: de dónde salen (lo que tiene un
+   participante, todo el proyecto o una lista elegida a mano) y qué filtros tienen que pasar. */
+function varPool(v,as,sim){
+  const holder=as[v.role];
+  if(v.kind==='team'){
+    const alive=t=>teamMatesIn(sim,t).filter(c=>c.alive);
+    let pool;
+    if(v.src==='of'){const t=holder?teamOfIn(sim,holder):null;pool=t?[t]:[];}
+    else if(v.src==='list') pool=sim.teams.filter(t=>v.excl?!v.ids.includes(t.id):v.ids.includes(t.id));
+    else pool=sim.teams.slice();
+    pool=pool.filter(t=>alive(t).length);
+    (v.has||[]).forEach(r=>{const c=as[r];pool=pool.filter(t=>!!c&&t.members.includes(c.id));});
+    (v.lacks||[]).forEach(r=>{const c=as[r];if(c)pool=pool.filter(t=>!t.members.includes(c.id));});
+    if(v.size) pool=pool.filter(t=>cmp(alive(t).length,v.size.op,v.size.num));
+    if(v.leader) pool=pool.filter(t=>v.leader==='yes'?!!t.leader:!t.leader);
+    return pool.map(t=>t.id);
+  }
+  const L={item:P.items,skill:P.skills,state:P.states}[v.kind];
+  let ids;
+  if(v.src==='of'){
+    if(!holder) return null;
+    ids=v.kind==='item'?[...holder.items]:(v.kind==='skill'?[...holder.skills]:holder.states.map(x=>x.id));
+  } else if(v.src==='list') ids=L.filter(i=>v.excl?!v.ids.includes(i.id):v.ids.includes(i.id)).map(i=>i.id);
+  else ids=L.map(i=>i.id);
+  const has=(c,id)=>v.kind==='item'?c.items.has(id):(v.kind==='skill'?c.skills.has(id):hasState(c,id));
+  if(v.cats&&v.cats.length) ids=ids.filter(id=>{const o=L.find(i=>i.id===id);return !!o&&v.cats.includes(o.cat||'');});
+  (v.has||[]).forEach(r=>{const c=as[r];ids=ids.filter(id=>!!c&&has(c,id));});
+  (v.lacks||[]).forEach(r=>{const c=as[r];if(c)ids=ids.filter(id=>!has(c,id)&&(v.kind!=='item'||slotsFree(c)>=sizeOf(id)));});
+  if(v.size&&v.kind==='item') ids=ids.filter(id=>cmp(sizeOf(id),v.size.op,v.size.num));
+  return ids;
+}
 /* Elige al azar los elementos del evento para una asignación de personajes.
    Devuelve {nombre:{kind,id,label}} o null si alguno no se puede elegir (el evento no puede ocurrir así). */
 function resolveVars(e,as,sim){
@@ -456,22 +587,8 @@ function resolveVars(e,as,sim){
   if(!e.vars||!e.vars.length) return vs;
   const chosen={item:new Set(),skill:new Set(),state:new Set(),team:new Set()};
   for(const v of e.vars){
-    let pool;
-    const holder=as[v.role];
-    if(v.kind==='team'){
-      if(v.src==='of'){const t=holder?teamOfIn(sim,holder):null;pool=t?[t.id]:[];}
-      else pool=sim.teams.filter(t=>teamMatesIn(sim,t).some(c=>c.alive)).map(t=>t.id);
-    } else {
-      if(v.src==='of'){
-        if(!holder) return null;
-        pool=v.kind==='item'?[...holder.items]:(v.kind==='skill'?[...holder.skills]:holder.states.map(x=>x.id));
-      } else {
-        const L={item:P.items,skill:P.skills,state:P.states}[v.kind];
-        pool=L.filter(i=>!v.cat||v.kind==='state'||(i.cat||'')===v.cat).map(i=>i.id);
-      }
-      const lk=v.lacks?as[v.lacks]:null;
-      if(lk) pool=pool.filter(id=>v.kind==='item'?(!lk.items.has(id)&&slotsFree(lk)>=sizeOf(id)):(v.kind==='skill'?!lk.skills.has(id):!hasState(lk,id)));
-    }
+    let pool=varPool(v,as,sim);
+    if(!pool) return null;
     pool=pool.filter(id=>!chosen[v.kind].has(id)&&varLabel(v.kind,id,sim));
     if(!pool.length) return null;
     const id=pool[Math.floor(Math.random()*pool.length)];
@@ -480,6 +597,8 @@ function resolveVars(e,as,sim){
   }
   return vs;
 }
+/* Elige quiénes participan en el evento (X ya es el actor). Prueba combinaciones en orden al azar y descarta
+   las que ya no pueden cumplirse apenas se sabe, así sirve aunque el evento tenga muchísimos participantes. */
 function pickAssignment(e,actor,sim,used,ignoreCond){
   const roles=e.roles;
   const pools=roles.slice(1).map(r=>{
@@ -488,35 +607,71 @@ function pickAssignment(e,actor,sim,used,ignoreCond){
     return r.req==='dead'?dead:(r.req==='any'?alive.concat(dead):alive);
   });
   if(pools.some(p=>!p.length)) return null;
-  const valid=[];
-  const test=combo=>{
-    const ids=new Set([actor.id]);
-    for(const c of combo){ if(ids.has(c.id)) return; ids.add(c.id); }
-    const as={}; as[roles[0].n]=actor;
-    combo.forEach((c,i)=>{as[roles[i+1].n]=c;});
-    if(!(ignoreCond||evalNode(e.cond,as))) return;
-    const vs=resolveVars(e,as,sim);              // los elementos del evento (objetos, equipos…) también tienen que existir
-    if(!vs) return;
-    Object.defineProperty(as,'vs',{value:vs,enumerable:false,writable:true});
-    valid.push(as);
+  const as={}; as[roles[0].n]=actor;
+  if(!ignoreCond&&ev3(e.cond,as,false)===false) return null;
+  const taken=new Set([actor.id]);
+  let budget=4000,found=null;
+  const rec=i=>{
+    if(found||budget<=0) return;
+    if(i===pools.length){
+      if(!(ignoreCond||ev3(e.cond,as,true)===true)) return;
+      const snap=Object.assign({},as);
+      const vs=resolveVars(e,snap,sim);              // los elementos del evento (objetos, equipos…) también tienen que existir
+      if(!vs) return;
+      Object.defineProperty(snap,'vs',{value:vs,enumerable:false,writable:true});
+      found=snap;
+      return;
+    }
+    const rn=roles[i+1].n;
+    for(const c of shuffle(pools[i].filter(x=>!taken.has(x.id)))){
+      if(found||budget<=0) return;
+      budget--;
+      as[rn]=c;taken.add(c.id);
+      if(ignoreCond||ev3(e.cond,as,false)!==false) rec(i+1);
+      taken.delete(c.id);delete as[rn];
+    }
   };
-  const total=pools.reduce((a,p)=>a*p.length,1);
-  if(total<=400){
-    const rec=(i,acc)=>{ if(i===pools.length){test(acc);return;} for(const c of pools[i]) rec(i+1,acc.concat([c])); };
-    rec(0,[]);
-  } else {
-    for(let k=0;k<80;k++) test(pools.map(p=>p[Math.floor(Math.random()*p.length)]));
-  }
-  return valid.length?valid[Math.floor(Math.random()*valid.length)]:null;
+  rec(0);
+  return found;
 }
 function fmt(text,as){
   return esc(text).replace(TOKEN_RE,(m,k)=>{
-    if(k.length===1) return as[k]?'<b class="nm">'+esc(as[k].name)+'</b>':m;
+    if(ROLE_RE.test(k)) return as[k]?'<b class="nm">'+esc(as[k].name)+'</b>':m;
     const v=as.vs&&as.vs[k];
     return v?'<b class="nm">'+esc(v.label)+'</b>':m;
   });
 }
 const roleLook=(e,k)=>{const r=e.roles.find(x=>x.n===k);return r?r.look:'';};
+/* Quiénes se muestran en el registro, separados por equipo. Cuando el evento habla de un equipo (un elemento
+   {Equipo1}, o un participante marcado «con todo su equipo») salen todos sus integrantes; el resto, aparte. */
+function buildGroups(e,as,sim){
+  const clusters=[],inCl=new Set(),look={};
+  e.roles.forEach(r=>{if(as[r.n])look[as[r.n].id]=r.look;});
+  const mem=c=>({c,src:lookFor(c,look[c.id]||'')});
+  const addTeam=t=>{
+    if(!t||clusters.some(g=>g.tid===t.id)) return;
+    const ms=teamMatesIn(sim,t);
+    clusters.push({tid:t.id,team:t.name,members:ms.map(mem)});
+    ms.forEach(c=>inCl.add(c.id));
+  };
+  const vs=as.vs||{};
+  Object.keys(vs).forEach(n=>{if(vs[n].kind==='team')addTeam(sim.teams.find(t=>t.id===vs[n].id));});
+  e.roles.forEach(r=>{if(r.squad&&as[r.n])addTeam(teamOfIn(sim,as[r.n]));});
+  const solo=[];
+  e.roles.forEach(r=>{const c=as[r.n];if(c&&!inCl.has(c.id)){solo.push(mem(c));inCl.add(c.id);}});
+  if(solo.length) clusters.push({tid:'',team:'',members:solo});
+  return clusters;
+}
+/* Si el evento formó equipos, sus integrantes pasan a mostrarse juntos. */
+function finishGroups(entry,sim){
+  (entry.formed||[]).forEach(id=>{
+    const t=sim.teams.find(x=>x.id===id);if(!t) return;
+    const ms=teamMatesIn(sim,t);
+    entry.groups.forEach(g=>{g.members=g.members.filter(m=>!t.members.includes(m.c.id));});
+    entry.groups=entry.groups.filter(g=>g.members.length);
+    entry.groups.unshift({tid:t.id,team:t.name,members:ms.map(c=>({c,src:lookFor(c,'')}))});
+  });
+}
 
 /* Aplica una lista de efectos (los de «ocurre» o los de «no sale bien»). */
 function applyFx(list,as,actor,sim,entry){
@@ -524,6 +679,11 @@ function applyFx(list,as,actor,sim,entry){
   for(const f0 of list){
     /* las referencias a elementos del evento («@Objeto1») se cambian por lo que se eligió */
     const f=((f0.ref&&f0.ref.charAt(0)==='@')||(f0.ref2&&f0.ref2.charAt(0)==='@'))?Object.assign({},f0,{ref:rr(f0.ref),ref2:rr(f0.ref2)}):f0;
+    if(f.more&&f.more.length&&MULTI_FX.includes(f.k)){
+      /* el mismo efecto para cada participante de la lista */
+      [f.role].concat(f.more).forEach(r=>applyFx([Object.assign({},f,{role:r,more:[]})],as,actor,sim,entry));
+      continue;
+    }
     const t=as[f.role]; if(!t) continue;
     if(f.k==='kill'){
       if(!t.alive) continue;
@@ -545,11 +705,13 @@ function applyFx(list,as,actor,sim,entry){
     } else if(f.k==='loyalty'){
       t.loy=Math.min(100,Math.max(0,f.mode==='set'?f.num:t.loy+f.num));
     } else if(f.k==='teamForm'){
-      const o=as[f.by];
-      if(!o||o.id===t.id) continue;
-      if(t.team||o.team){entry.notes.push('No se formó el equipo: '+(t.team?t.name:o.name)+' ya tenía uno.');continue;}
-      const nt=formTeam(sim,t,o,f.nm,f.num>0);
-      entry.notes.push('Se formó el equipo «'+nt.name+'»'+(nt.leader?' con '+t.name+' como líder.':'.'));
+      const ms=[...new Set([t,as[f.by]].concat((f.more||[]).map(r=>as[r])).filter(Boolean))];
+      if(ms.length<2) continue;
+      const had=ms.find(c=>c.team);
+      if(had){entry.notes.push('No se formó el equipo: '+had.name+' ya tenía uno.');continue;}
+      const nt=formTeamN(sim,ms,f.nm,f.num>0);
+      (entry.formed=entry.formed||[]).push(nt.id);
+      entry.notes.push('Se formó el equipo «'+nt.name+'» con '+ms.map(c=>c.name).join(', ')+(nt.leader?'; '+t.name+' es el líder.':'.'));
     } else if(f.k==='teamJoin'){
       const o=as[f.by],team=o?teamOf(o):null;
       if(!o||!team||t.team){entry.notes.push('No se pudo incorporar a '+t.name+(t.team?': ya tiene equipo.':': no hay equipo al que unirse.'));continue;}
@@ -656,9 +818,8 @@ function chaosShake(sim,level){
   return n;
 }
 
-/* Probabilidad (0 a 1) de que el evento «salga bien» según su modo. */
-function successChance(e,as){
-  const c=e.chance;
+/* Probabilidad (0 a 1) según un modo de probabilidad (el de «sale bien» o el de un desenlace extra). */
+function chanceOf(c,e,as){
   if(!c||c.mode==='always') return 1;
   const A=as[e.roles[0].n],B=e.roles[1]?as[e.roles[1].n]:null;
   switch(c.mode){
@@ -674,8 +835,40 @@ function successChance(e,as){
       return a/(a+b);
     }
     case 'loyalty': return Math.min(1,Math.max(0,1-A.loy/100));
+    case 'calc': {
+      /* Se parte de un porcentaje base y cada paso, si se cumple su condición, lo suma, lo multiplica o lo fija. */
+      let p=Math.min(100,Math.max(0,c.pct));
+      (c.steps||[]).forEach(st=>{
+        if(!evalNode(st.cond,as)) return;
+        const r1=as[st.role],r2=as[st.role2];
+        let v=st.num;
+        if(st.op==='add'){
+          if(st.kind==='stat') v=st.num*(r1&&st.stat?statVal(r1,st.stat):0);
+          else if(st.kind==='statdiff') v=st.num*((r1&&st.stat?statVal(r1,st.stat):0)-(r2&&st.stat?statVal(r2,st.stat):0));
+          else if(st.kind==='loyalty') v=st.num*(r1?r1.loy:0);
+          else if(st.kind==='teamsize') v=st.num*(r1?teamSizeOf(r1):0);
+          else if(st.kind==='teamdiff') v=st.num*((r1?teamSizeOf(r1):0)-(r2?teamSizeOf(r2):0));
+          p+=v;
+        } else if(st.op==='mult') p*=v;
+        else p=v;
+        p=Math.min(100,Math.max(0,p));
+      });
+      return p/100;
+    }
   }
   return 1;
+}
+const successChance=(e,as)=>chanceOf(e.chance,e,as);
+/* Qué desenlace le toca al evento: «sale bien», alguno extra, o «no sale bien» con lo que sobre.
+   Si las probabilidades suman más de 100%, se reparten en proporción. */
+function pickOutcome(e,as){
+  const ps=[chanceOf(e.chance,e,as)].concat((e.outs||[]).map(o=>chanceOf(o.chance,e,as)));
+  const tot=ps.reduce((a,b)=>a+b,0),rest=Math.max(0,1-tot),sum=Math.max(1,tot);
+  let r=Math.random()*sum,i=0;
+  for(;i<ps.length;i++){r-=ps[i];if(r<0)break;}
+  if(i>=ps.length&&rest<=0) i=ps.length-1;
+  const w=i<ps.length?ps[i]:rest;
+  return {idx:i,main:i===0,fail:i>=ps.length,out:(i>0&&i<ps.length)?e.outs[i-1]:null,pct:Math.round(w/sum*100)};
 }
 
 /* Estados alterados al empezar un día: los que ya cumplieron su duración se van y los demás
@@ -759,16 +952,19 @@ function playDay(sim,opts){
     const {e,as}=pick;
     if(ignore&&chaos) chaos.wild++;
     Object.keys(as).forEach(k=>used.add(as[k].id));
-    /* ¿sale bien o mal? (si el evento no tiene probabilidad, siempre sale como está escrito) */
-    const p=successChance(e,as);
-    const ok=p>=1||Math.random()<p;
-    const text=(!ok&&e.failText.trim())?e.failText:e.text;
+    /* ¿qué desenlace le toca? (si el evento no tiene probabilidad, siempre sale como está escrito) */
+    const oc=pickOutcome(e,as);
+    const text=oc.out?(oc.out.text.trim()||e.text):((oc.fail&&e.failText.trim())?e.failText:e.text);
+    const groups=buildGroups(e,as,sim);
     const entry={
       html:fmt(text,as),
       who:Object.keys(as).map(k=>({c:as[k],src:lookFor(as[k],roleLook(e,k))})),
-      deaths:[],notes:[],chance:(e.chance&&e.chance.mode!=='always')?Math.round(p*100):null
+      groups,deaths:[],notes:[],
+      chance:(!(e.outs&&e.outs.length)&&e.chance&&e.chance.mode!=='always')?Math.round(successChance(e,as)*100):null,
+      outcome:(e.outs&&e.outs.length)?{name:oc.out?(oc.out.name.trim()||'Desenlace extra'):(oc.fail?'No sale bien':'Sale bien'),pct:oc.pct}:null
     };
-    applyFx(ok?e.fx:e.fxFail,as,actor,sim,entry);
+    applyFx(oc.out?oc.out.fx:(oc.fail?e.fxFail:e.fx),as,actor,sim,entry);
+    finishGroups(entry,sim);
     entries.push(entry);
   }
   const alive=sim.chars.filter(c=>c.alive).length;

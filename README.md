@@ -57,6 +57,15 @@ Todavía no existen: los escenarios y «dividirse para buscar recursos».
 - **Límites por stat** (mínimo y máximo para cada una), **emoji o imagen como ícono** de objetos y habilidades, **orden y filtros** (A→Z, letra inicial, por stats, objetos, habilidades, estados, equipos) y la imagen de la ficha del personaje ya no se estira.
 - Los proyectos viejos se actualizan solos al cargarlos (versión 5).
 
+## Novedades de la etapa 6: eventos más potentes
+- **Elementos del evento con filtros**: además de «lo que tiene un participante» o «cualquiera del proyecto», ahora se pueden elegir **a mano** (una lista, o «todos menos…»), **por categorías** (también los estados tienen categoría), por lo que otros participantes **tienen o no tienen**, por el **tamaño** del objeto o de los integrantes de un equipo, y por si el equipo tiene líder. No hay límite de elementos.
+- **Participantes sin límite**: hasta tantos como personajes haya (X, Y, Z, W, A, B… y después X1, Y1…). Una regla puede aplicarse a **varios participantes** («todos» o «alguno» de ellos) y casi todos los efectos pueden afectar a varios a la vez. «Formar un equipo» y «Incorporar a un equipo» aceptan más de dos.
+- **Y/O combinados**: un grupo puede ser «Y/O · mezcla»; entre cada regla aparece una Y o una O que se cambia tocándola. La Y se resuelve antes que la O: «A y B o C» es «(A y B) o C». Para otro orden, se usa un grupo dentro de otro.
+- **Equipos en el registro**: cuando un evento habla de un equipo (un elemento «Equipo») o un participante tiene marcado «con todo su equipo», salen todos sus integrantes en un recuadro con el nombre del equipo, aparte de los demás.
+- **Resultado con varios desenlaces**: «Sale bien», cualquier cantidad de desenlaces extra (con nombre, probabilidad, texto y efectos propios) y «No sale bien», que se lleva lo que sobre. Si las probabilidades suman más de 100%, se reparten en proporción.
+- **Probabilidad calculada con bloques**: se parte de un porcentaje base y cada paso (con su propia condición, también armada con bloques) suma, multiplica o fija el porcentaje; el valor puede salir de una stat, la diferencia de stats entre dos participantes, la lealtad o el tamaño de los equipos.
+- Los proyectos de versiones anteriores se actualizan solos al abrirlos (versión 6).
+
 ## Qué hay en cada archivo
 
 | Archivo | Para qué sirve |
@@ -69,6 +78,7 @@ Todavía no existen: los escenarios y «dividirse para buscar recursos».
 | `js/interfaz.js` | Pantallas y botones. |
 | `js/bloques.js` | Editor visual de bloques (arrastrar, anidar, colores). |
 | `js/interfaz-estados.js` | Pantallas de estados alterados. |
-| `js/interfaz-elementos.js` | Sección «Elementos del evento». |
+| `js/interfaz-elementos.js` | Sección «Elementos del evento» (de dónde salen y filtros). |
+| `js/interfaz-resultado.js` | Sección «Resultado»: probabilidad por bloques y desenlaces. |
 | `js/interfaz-equipos.js` | Pantallas de equipos y vocabulario. |
 | `js/inicio.js` | Arranque. |

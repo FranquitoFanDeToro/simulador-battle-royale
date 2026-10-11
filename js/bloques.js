@@ -63,20 +63,21 @@ function fxActs(L,i){
   const a=`data-kind="f" data-list="${L}" data-i="${i}"`;
   return `<button type="button" class="x" data-act="blk-up" ${a} aria-label="Subir" title="Subir">▲</button><button type="button" class="x" data-act="blk-down" ${a} aria-label="Bajar" title="Bajar">▼</button><button type="button" class="x" data-act="blk-dup" ${a} aria-label="Duplicar" title="Duplicar">⧉</button><button type="button" class="x" data-act="fx-del" data-list="${L}" data-i="${i}" aria-label="Quitar" title="Quitar">✕</button>`;
 }
-function blkNode(e,n,path,depth){
+function blkNode(e,n,path,depth,par,idx){
+  const jn=joinHTML(par,idx,path);
   if(n.t==='g'){
     const root=depth===0;
-    const kids=n.c.length?n.c.map((ch,i)=>blkNode(e,ch,path?path+'.'+i:String(i),depth+1)).join(''):`<p class="dz-empty">Sin reglas: siempre se cumple. Agregá un bloque o arrastrá uno acá.</p>`;
+    const kids=n.c.length?n.c.map((ch,i)=>blkNode(e,ch,cpath(path,i),depth+1,n,i)).join(''):`<p class="dz-empty">Sin reglas: siempre se cumple. Agregá un bloque o arrastrá uno acá.</p>`;
     return `<div class="blk grp-blk ${root?'root':''}" data-kind="c" data-path="${path}" data-g="${n.op}">
-      <div class="bh">${root?'':HDL}<div class="seg" role="group" aria-label="Tipo de grupo">${['and','or','not'].map(op=>`<button type="button" class="${n.op===op?'on':''}" data-act="g-op" data-path="${path}" data-op="${op}">${OPS[op]}</button>`).join('')}</div>${blkPickerHTML(`data-zone="c" data-path="${path}"`)}${root?'':`<span class="ba">${condActs(path)}</span>`}</div>
+      <div class="bh">${root?'':HDL}${jn}${opSegHTML(path,n)}${blkPickerHTML(`data-zone="c" data-path="${path}"`)}${root?'':`<span class="ba">${condActs(path)}</span>`}</div>
       <p class="hint">${EXPL[n.op]}</p>
       <div class="dz" data-zone="c" data-path="${path}">${kids}</div></div>`;
   }
-  return `<div class="blk k-${RULE_CAT[n.kind]||'char'}" data-kind="c" data-path="${path}">${HDL}<div class="bc">${ruleControls(e,n,path)}</div><div class="ba">${condActs(path)}</div></div>`;
+  return `<div class="blk k-${RULE_CAT[n.kind]||'char'}" data-kind="c" data-path="${path}">${HDL}<div class="bc">${jn}${ruleControls(e,n,path)}</div><div class="ba">${condActs(path)}</div></div>`;
 }
 function fxZoneHTML(e,L){
   const list=fxList(e,L);
-  const kids=list.length?list.map((f,i)=>`<div class="blk k-${FX_CAT[f.k]||'char'}" data-kind="f" data-list="${L}" data-i="${i}">${HDL}<div class="bc">${fxControls(e,f,i,L)}</div><div class="ba">${fxActs(L,i)}</div></div>`).join(''):`<p class="dz-empty">${L==='fx'?'Sin efectos: el evento es solo una escena. Agregá uno o arrastrá uno acá.':'Sin efectos: solo se cuenta lo que pasó.'}</p>`;
+  const kids=list.length?list.map((f,i)=>`<div class="blk k-${FX_CAT[f.k]||'char'}" data-kind="f" data-list="${L}" data-i="${i}">${HDL}<div class="bc">${fxControls(e,f,i,L)}</div><div class="ba">${fxActs(L,i)}</div></div>`).join(''):`<p class="dz-empty">${L==='fx'?'Sin efectos: el evento es solo una escena. Agregá uno o arrastrá uno acá.':'Sin efectos: solo se cuenta lo que pasó. Agregá uno o arrastrá uno acá.'}</p>`;
   return `<div class="dz" data-zone="f" data-list="${L}">${kids}</div><div class="acts">${fxPickerHTML(L)}</div>`;
 }
 function viewToggleHTML(){
@@ -93,7 +94,7 @@ function programHTML(e){
   <div class="pk"><b>ENTONCES</b> pasa</div>
   ${fxZoneHTML(e,'fx')}
   <p class="hint">Si un objeto no entra en los slots, el personaje no tiene la stat o no hay equipo para el efecto, ese efecto no se aplica y queda una nota en el registro.</p></section>
-  ${chanceSection(e,true)}`;
+  ${resultSection(e,true)}`;
 }
 
 /* ---------- Cambios sobre los datos ---------- */
@@ -101,7 +102,7 @@ const hasNode=(g,x)=>g===x||(g.t==='g'&&g.c.some(ch=>hasNode(ch,x)));
 /* Mueve un nodo de condiciones al grupo `toPath`, en la posición `idx` (contada antes de sacarlo). */
 function moveCond(fromPath,toPath,idx){
   const e=curEv();if(!e||!fromPath)return false;
-  const q=parentOf(e.cond,fromPath),node=q.parent.c[q.idx],tgt=nodeAt(e.cond,toPath);
+  const q=parentOfE(e,fromPath),node=q.parent.c[q.idx],tgt=nodeAtE(e,toPath);
   if(!node||!tgt||tgt.t!=='g')return false;
   if(node.t==='g'&&hasNode(node,tgt))return false;
   q.parent.c.splice(q.idx,1);
@@ -133,7 +134,7 @@ Object.assign(ACT,{
   'blk-down'(b){blkStep(b);},
   'blk-dup'(b){
     const e=curEv();if(!e)return;
-    if(b.dataset.kind==='c'){const q=parentOf(e.cond,b.dataset.path);q.parent.c.splice(q.idx+1,0,clone(q.parent.c[q.idx]));}
+    if(b.dataset.kind==='c'){const q=parentOfE(e,b.dataset.path);q.parent.c.splice(q.idx+1,0,clone(q.parent.c[q.idx]));}
     else{const l=fxList(e,b.dataset.list),i=+b.dataset.i;l.splice(i+1,0,clone(l[i]));}
     structural();
   }
@@ -142,7 +143,7 @@ function blkStep(b){
   const e=curEv();if(!e)return;
   const d=dirOf(b);
   if(b.dataset.kind==='c'){
-    const p=b.dataset.path,q=parentOf(e.cond,p),zp=p.split('.').slice(0,-1).join('.');
+    const p=b.dataset.path,q=parentOfE(e,p),zp=parentPath(p);
     if(d<0?q.idx>0:q.idx<q.parent.c.length-1){moveCond(p,zp,d<0?q.idx-1:q.idx+2);structural();}
   } else {
     const L=b.dataset.list,i=+b.dataset.i,n=fxList(e,L).length;
@@ -154,7 +155,7 @@ Object.assign(BIND,{
     const e=curEv(),v=t.value;if(!e||!v)return;
     const [k,x]=v.split(':');
     if(t.dataset.zone==='c'){
-      const g=nodeAt(e.cond,t.dataset.path);if(!g||g.t!=='g')return;
+      const g=nodeAtE(e,t.dataset.path);if(!g||g.t!=='g')return;
       if(k==='r'){const r=newRule(e);setRuleKind(e,r,x);g.c.push(r);}
       else if(k==='g'){g.c.push({t:'g',op:x,c:[]});}
     } else {

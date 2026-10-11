@@ -289,6 +289,49 @@ span.ico.lg{width:auto;height:auto;font-size:28px}
 #cf .inner{display:grid;gap:10px}
 #cf summary .chip{margin-left:8px}
 
-/* Elementos de un evento */
+/* Etapa 6: elementos con filtros, uniones Y/O, pasos de probabilidad, desenlaces y equipos en el registro */
 .rl.vl{width:auto;min-width:34px;padding:0 10px;white-space:nowrap}
-.vrow select,.vrow input[type=text]{flex:1 1 150px;min-width:0;width:auto}
+.velem{border:1px solid var(--line);border-radius:8px;background:var(--surface-2);padding:10px;display:grid;gap:8px}
+.vh{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.vh .x{margin-left:auto}
+.vgrid{display:grid;gap:8px 14px;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))}
+.vf{display:grid;gap:3px;min-width:0;align-content:start}
+.vf .vl{font:600 11px var(--font-mono);color:var(--ink-2);text-transform:uppercase;letter-spacing:.05em}
+.vf select,.vf input[type=number]{width:auto;max-width:100%;min-width:0}
+.vf>select+select,.vf>select+input{margin-top:4px}
+.chipsel{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chip.rc{display:inline-flex;align-items:center;gap:2px;padding-right:2px;background:var(--surface);border:1px solid var(--line)}
+.chip.rc .x{padding:0 5px;font-size:13px;line-height:1.4}
+.addsel.mini{flex:0 1 150px;padding:3px 6px;font-size:12.5px}
+.check.sm{font-size:12.5px;display:inline-flex;gap:6px;align-items:center;margin:0}
+.inl{margin:0;font-size:13px;color:var(--ink-2)}
+.rrow input[type=number]{width:90px}
+.jn{font:700 11px var(--font-mono);min-width:30px;padding:6px 7px;border-radius:4px;border:1px solid var(--line);background:var(--surface);color:var(--ink);flex:none;text-align:center}
+.jn.or{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.jn.jn0{border-style:dashed;color:var(--ink-2);display:inline-block}
+.seg{flex-wrap:wrap}
+.step{border:1px dashed var(--line);border-radius:8px;padding:10px;display:grid;gap:8px;background:var(--surface-2)}
+.step-h{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.step-h .acts{margin-left:auto;display:flex;gap:2px}
+.steps{display:grid;gap:10px}
+.outc{border:1px solid var(--line);border-left:6px solid var(--ink-2);border-radius:8px;padding:10px 12px;display:grid;gap:8px;background:var(--surface)}
+.outc.main{border-left-color:var(--ok,#2e7d32)}
+.outc.fail{border-left-color:var(--accent)}
+.outc-h{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.outc-h input[type=text]{flex:1 1 200px;min-width:0}
+.outc-h .acts{margin-left:auto;display:flex;gap:2px}
+.x[disabled]{opacity:.3;cursor:default}
+.clusters{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:stretch}
+.cl{display:grid;gap:4px;justify-items:start;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
+.cl.team{border-color:var(--ink-2);border-left-width:4px}
+.cl-n{font:600 11px var(--font-mono);letter-spacing:.04em;max-width:200px;overflow-wrap:anywhere}
+.cl-n.solo{color:var(--ink-2);font-weight:500}
+.stack .more{align-self:center;margin-left:4px;font:600 11px var(--font-mono);color:var(--ink-2)}
+.en.cls{grid-template-columns:minmax(0,1fr)}
+@media (max-width:640px){.vgrid{grid-template-columns:minmax(0,1fr)}}
+.outc,.step,.velem,.steps{grid-template-columns:minmax(0,1fr)}
+.outc .two>div,.step .fx>*{min-width:0}
+.outc select,.step select,.velem select{max-width:100%}
+.grp{grid-template-columns:minmax(0,1fr)}
+.grp-b,.grp-h,.rule{min-width:0}
+.rule select,.rule input{max-width:100%;min-width:0}
