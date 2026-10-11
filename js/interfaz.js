@@ -23,7 +23,7 @@ const KIND_LBL={
   emotion:'siente',loyalty:'tiene lealtad',inteam:'tiene equipo',isleader:'es líder de su equipo',
   sameteam:'está en el mismo equipo que',teamsize:'tiene un equipo de tamaño',teamitem:'tiene (propio o compartido) el objeto',
   is:'es el personaje',state:'tiene el estado',anystate:'tiene algún estado alterado',
-  scene:'está en el escenario',samescene:'está en el mismo escenario que',linkedscene:'está en un escenario conectado con el de',scenecount:'comparte escenario con una cantidad de vivos',sceneexit:'está en un escenario con conexiones'
+  scene:'está en el escenario',samescene:'está en el mismo escenario que',linkedscene:'está en un escenario conectado con el de',scenecount:'comparte escenario con una cantidad de vivos',sceneexit:'está en un escenario con conexiones',linkedto:'está en un escenario conectado con',inteamof:'pertenece al equipo'
 };
 const KL={
   scenes:{title:'Escenarios',noun:'escenario',ph:'Ej: Bosque',hint:'Un escenario es un lugar con nombre e imagen. Cada personaje está en uno (también los que cayeron). Los escenarios pueden estar conectados entre sí; los eventos pueden exigir que los participantes coincidan en el escenario (o no), preguntar dónde están y moverlos.'},
@@ -85,7 +85,7 @@ function previewHTML(e,txt){
 /* ---------- Referencias y validación ---------- */
 function walkRules(n,fn){if(n.t==='g')n.c.forEach(c=>walkRules(c,fn));else fn(n);}
 function countRules(n){let k=0;walkRules(n,()=>{k++;});return k;}
-const refListOf=kind=>({item:'items',space:'items',teamitem:'items',skill:'skills',skillready:'skills',hasstat:'stats',stat:'stats',statvs:'stats',emotion:'emotions',is:'chars',state:'states',scene:'scenes'}[kind]||null);
+const refListOf=kind=>({item:'items',space:'items',teamitem:'items',skill:'skills',skillready:'skills',hasstat:'stats',stat:'stats',statvs:'stats',emotion:'emotions',is:'chars',state:'states',scene:'scenes',linkedto:'scenes',inteamof:'teams'}[kind]||null);
 const RULE_NEEDS_ROLE2=['statvs','sameteam','samescene','linkedscene'];
 const RULE_NEEDS_CMP=['stat','statvs','teamsize','loyalty','scenecount'];
 const RULE_NEEDS_NUM=['stat','teamsize','loyalty','scenecount'];
@@ -111,7 +111,7 @@ function usage(kind,id){
   const ch=P.chars.filter(c=>kind==='stats'?hasStat(c,id):(kind==='emotions'?c.emotion===id:(kind==='scenes'?c.scene===id:c[kind].includes(id)))).length;
   return {ev,ch};
 }
-const VAR_FOR_REF={items:'item',skills:'skill',states:'state',scenes:'scene','@team':'team'};
+const VAR_FOR_REF={items:'item',skills:'skill',states:'state',scenes:'scene',teams:'team','@team':'team'};
 const varOf=(e,ref)=>(ref&&ref.charAt(0)==='@')?(e.vars||[]).find(v=>v.n===ref.slice(1))||null:null;
 /* ¿La referencia de un efecto es válida? Puede ser un elemento del proyecto o un elemento del evento (@Objeto1). */
 function fxRefOk(e,list,ref){
@@ -120,7 +120,7 @@ function fxRefOk(e,list,ref){
   return list!=='@team'&&!!P[list]&&P[list].some(i=>i.id===ref);
 }
 const killsFx=f=>f.k==='kill'||f.k==='killTeam'||f.k==='teamFight';
-const NOUN={items:'objeto',skills:'habilidad',stats:'stat',emotions:'emoción',chars:'personaje',states:'estado alterado',scenes:'escenario','@team':'equipo del evento'};
+const NOUN={items:'objeto',skills:'habilidad',stats:'stat',emotions:'emoción',chars:'personaje',states:'estado alterado',scenes:'escenario',teams:'equipo','@team':'equipo del evento'};
 function issues(e){
   const out=new Set(), rn=e.roles.map(r=>r.n), has=r=>rn.includes(r);
   if(!e.text.trim()) out.add('El evento no tiene texto.');
@@ -138,7 +138,7 @@ function issues(e){
     [r.role].concat(r.more||[]).forEach(x=>{if(!has(x))out.add('Una regla usa el participante '+x+', que no existe.');});
     if(RULE_NEEDS_ROLE2.includes(r.kind)&&!has(r.role2)) out.add('Una regla compara con el participante '+r.role2+', que no existe.');
     const L=refListOf(r.kind);
-    if(L&&!P[L].some(i=>i.id===r.val)) out.add('Una regla apunta a un/a '+NOUN[L]+' que falta o no está elegido/a.');
+    if(L&&!fxRefOk(e,L,r.val)) out.add('Una regla apunta a un/a '+NOUN[L]+' que falta o no está elegido/a.');
   });
   checkRules(e.cond);
   allFx(e).forEach(f=>{
@@ -430,14 +430,20 @@ function roleOpts(e,cur){
   if(cur&&!names.includes(cur)) h=`<option value="${esc(cur)}" selected>⚠ ${esc(cur)}</option>`+h;
   return h;
 }
-function valOpts(kind,cur){
+function valOpts(kind,cur,e){
   const L=refListOf(kind);
+  const vk=VAR_FOR_REF[L],vars=(e&&vk&&e.vars||[]).filter(v=>v.kind===vk);   // elementos del evento del mismo tipo
   let opts;
   if(L) opts=P[L].map(i=>[i.id,lbl(i)]);
   else if(kind==='gender') opts=Object.keys(GEN).map(k=>[k,GEN[k]]);
   else opts=[['alive','vivo'],['dead','muerto']];
+  const optH=o=>`<option value="${esc(o[0])}" ${o[0]===cur?'selected':''}>${esc(o[1])}</option>`;
   let h=L?`<option value="" ${!cur?'selected':''}>Elegir…</option>`:'';
-  h+=opts.map(o=>`<option value="${esc(o[0])}" ${o[0]===cur?'selected':''}>${esc(o[1])}</option>`).join('');
+  if(vars.length){
+    h+=`<optgroup label="Elementos del evento">${vars.map(v=>optH(['@'+v.n,'{'+v.n+'}'])).join('')}</optgroup>`;
+    h+=opts.length?`<optgroup label="Del proyecto">${opts.map(optH).join('')}</optgroup>`:'';
+    opts=opts.concat(vars.map(v=>['@'+v.n,'{'+v.n+'}']));
+  } else h+=opts.map(optH).join('');
   if(cur&&!opts.some(o=>o[0]===cur)) h=`<option value="${esc(cur)}" selected>⚠ ya no existe</option>`+h;
   return h;
 }
@@ -453,7 +459,7 @@ function ruleControls(e,n,path){
   if(RULE_NEEDS_CMP.includes(n.kind)) extra+=`<select data-bind="rule-op" data-path="${path}" aria-label="Comparación">${CMP.map(o=>`<option value="${o}" ${n.op===o?'selected':''}>${CMP_LBL[o]}</option>`).join('')}</select>`;
   if(RULE_NEEDS_NUM.includes(n.kind)) extra+=`<input type="number" step="any" value="${n.num}" data-bind="rule-num" data-path="${path}" aria-label="Número">`;
   if(RULE_NEEDS_ROLE2.includes(n.kind)) extra+=`<select data-bind="rule-role2" data-path="${path}" aria-label="Comparar con">${roleOpts(e,n.role2)}</select>`;
-  const val=NOVAL.includes(n.kind)?'':`<select data-bind="rule-val" data-path="${path}" aria-label="Valor">${valOpts(n.kind,n.val)}</select>`;
+  const val=NOVAL.includes(n.kind)?'':`<select data-bind="rule-val" data-path="${path}" aria-label="Valor">${valOpts(n.kind,n.val,e)}</select>`;
   return `<button type="button" class="neg ${n.neg?'on':''}" data-act="rule-neg" data-path="${path}" aria-pressed="${n.neg}" title="Invertir esta regla">NO</button>
   <select data-bind="rule-role" data-path="${path}" aria-label="Participante">${roleOpts(e,n.role)}</select>${moreChipsHTML(e,n.role,more,`data-path="${path}"`,'rule-more-del','rule-more-add')}${more.length?`<select data-bind="rule-q" data-path="${path}" aria-label="Cuántos de ellos"><option value="all" ${n.q!=='any'?'selected':''}>todos</option><option value="any" ${n.q==='any'?'selected':''}>alguno</option></select>`:''}
   <select data-bind="rule-kind" data-path="${path}" aria-label="Tipo de regla">${KINDS.map(k=>`<option value="${k}" ${n.kind===k?'selected':''}>${KIND_LBL[k]}</option>`).join('')}</select>

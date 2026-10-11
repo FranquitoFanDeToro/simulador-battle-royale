@@ -20,7 +20,7 @@ const RULE_CAT={
   state:'state',anystate:'state',
   item:'item',space:'item',teamitem:'item',
   skill:'skill',skillready:'skill',
-  scene:'scene',samescene:'scene',linkedscene:'scene',scenecount:'scene',sceneexit:'scene',
+  scene:'scene',samescene:'scene',linkedscene:'scene',scenecount:'scene',sceneexit:'scene',linkedto:'scene',inteamof:'team',
   hasstat:'stat',stat:'stat',statvs:'stat',
   emotion:'emo',
   loyalty:'team',inteam:'team',isleader:'team',sameteam:'team',teamsize:'team'
@@ -29,7 +29,7 @@ const FX_CAT={
   kill:'kill',
   giveItem:'item',removeItem:'item',teamTake:'item',
   giveSkill:'skill',removeSkill:'skill',useSkill:'skill',
-  moveScene:'scene',moveSceneRandom:'scene',moveSceneLinked:'scene',moveSceneWith:'scene',
+  joinTeam:'team',moveScene:'scene',moveSceneRandom:'scene',moveSceneLinked:'scene',moveSceneWith:'scene',
   stat:'stat',
   emotion:'emo',emotionClear:'emo',
   loyalty:'team',teamForm:'team',teamJoin:'team',teamLeave:'team',teamShare:'team',

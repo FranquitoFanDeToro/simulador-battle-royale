@@ -75,6 +75,8 @@ Object.assign(ACT,{
     e.vars.splice(i,1);
     /* los efectos que usaban este elemento quedan sin elegir (el aviso «Para revisar» lo marca) */
     allFx(e).forEach(f=>{if(f.ref==='@'+v.n)f.ref='';if(f.ref2==='@'+v.n)f.ref2='';});
+    const clean=root=>walkRules(root,r=>{if(r.val==='@'+v.n)r.val='';});
+    clean(e.cond);allChances(e).forEach(c=>(c.steps||[]).forEach(st=>clean(st.cond)));
     structural();
   },
   'var-chip-del'(b){

@@ -83,6 +83,7 @@ Todavía no existen: los escenarios y «dividirse para buscar recursos».
 - **Elemento «Escenario»** en los eventos ({Escenario1}): el escenario donde está alguien, uno conectado, uno cualquiera o de una lista.
 - **Simulación más visual**: personajes más grandes, banner con la imagen y el nombre del escenario, fichas con imagen de los objetos, habilidades y estados del evento, panel con quién está en cada escenario y escenario en la ficha y el resumen.
 - Los proyectos viejos se abren igual (sin escenarios).
+- **Elementos del evento en las reglas**: las reglas que piden un objeto, habilidad, estado, escenario o equipo (tiene el objeto, tiene espacio para, habilidad lista, tiene el estado, está en el escenario, conectado con…, pertenece al equipo…) ahora aceptan también {Objeto1}, {Escenario1}, {Equipo1}, etc. El evento prueba combinaciones hasta que se cumpla la condición. Nuevo efecto «Incorpora al equipo» para usar {Equipo1}.
 
 ## Qué hay en cada archivo
 
