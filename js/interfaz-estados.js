@@ -36,7 +36,7 @@ function statesListHTML(){
   return `<div class="grid">${L.map(stateCard).join('')}</div>`;
 }
 function vStates(){
-  if(ui.state){const s=curState();if(s)return vStateForm(s);ui.state=null;}
+  if(ui.state){const s=curState();if(s)return withNav('state',vStateForm(s));ui.state=null;}
   return `<div class="bar"><h2 class="h2">Estados alterados</h2><div class="acts"><button type="button" class="btn pri" data-act="state-new">Nuevo estado</button></div></div>
   <p class="hint" style="margin-bottom:12px">Un estado alterado es algo que le pasa a un personaje y dura un tiempo: quemadura, veneno, aturdimiento… Puede cambiarle las stats, impedirle actuar o hacerle algo cada día (incluso matarlo). Los eventos lo aplican, lo quitan y lo piden como condición: por ejemplo, «si X está quemado, puede morir por las quemaduras». Un personaje puede tener varios a la vez.</p>
   <div class="fbar"><input type="search" placeholder="Buscar estados…" value="${esc(ui.q.states)}" data-bind="q" data-k="states" aria-label="Buscar estados">${sortBarHTML('states')}<span class="hint" id="count">${countText('states')}</span></div>

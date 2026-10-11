@@ -1,0 +1,2 @@
+Carpeta para tus imágenes de la interfaz.
+Poné acá los archivos (SVG o PNG con fondo transparente) y escribí su ruta en js/imagenes.js.

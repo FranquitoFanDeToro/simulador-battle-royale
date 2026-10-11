@@ -335,3 +335,11 @@ span.ico.lg{width:auto;height:auto;font-size:28px}
 .grp{grid-template-columns:minmax(0,1fr)}
 .grp-b,.grp-h,.rule{min-width:0}
 .rule select,.rule input{max-width:100%;min-width:0}
+
+/* ---- Etapa 7: anterior / siguiente ---- */
+.pn{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px}
+.pn .btn{flex:0 1 auto;min-width:0}
+.pn .hint{flex:1;text-align:center}
+.uic{width:18px;height:18px;vertical-align:-3px;flex:none}
+.tabs button .uic{margin-right:6px}
+small .uic{width:13px;height:13px;vertical-align:-2px}

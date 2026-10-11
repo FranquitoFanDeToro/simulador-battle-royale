@@ -73,7 +73,8 @@ function outcomeCard(e,o,k,blocks){
   const acts=`<button type="button" class="x" data-act="out-up" ${oa} aria-label="Subir" ${k===0?'disabled':''}>▲</button><button type="button" class="x" data-act="out-down" ${oa} aria-label="Bajar" ${k===n-1?'disabled':''}>▼</button><button type="button" class="x" data-act="out-del" ${oa} aria-label="Quitar desenlace">✕</button>`;
   return `<div class="outc"><div class="outc-h"><input type="text" value="${esc(o.name)}" placeholder="Nombre del desenlace (ej: Éxito crítico)" data-bind="out-name" ${oa} aria-label="Nombre del desenlace" autocomplete="off"><span class="acts">${acts}</span></div>
   ${probHTML(e,o.chance,o.id,blocks)}
-  <div><label>Texto de este desenlace</label><textarea rows="2" data-bind="out-text" ${oa} aria-label="Texto del desenlace">${esc(o.text)}</textarea></div>
+  <div><label for="out-text-${o.id}">Texto de este desenlace</label><textarea id="out-text-${o.id}" rows="2" data-bind="out-text" ${oa} aria-label="Texto del desenlace">${esc(o.text)}</textarea></div>
+  ${tokenButtonsHTML(e,'out-text-'+o.id)}<p class="prev" id="out-text-${o.id}-prev">${previewHTML(e,o.text)}</p>
   <p class="hint">Efectos de este desenlace</p>
   ${blocks?fxZoneHTML(e,L):`${o.fx.length?o.fx.map((f,i)=>fxHTML(e,f,i,L)).join(''):'<p class="hint">Sin efectos: solo se cuenta lo que pasó.</p>'}<div><button type="button" class="btn sm" data-act="fx-add" data-list="${L}">Agregar efecto</button></div>`}</div>`;
 }
@@ -86,6 +87,7 @@ function resultSection(e,blocks){
   h+=`<div><button type="button" class="btn sm" data-act="out-add">Agregar otro desenlace</button></div>`;
   if(showFail) h+=`<div class="outc fail"><div class="outc-h"><b>No sale bien</b><span class="hint">el resto</span></div>
     <div><label for="ev-fail">Texto si no sale bien</label><textarea id="ev-fail" rows="2" data-bind="ev-fail">${esc(e.failText)}</textarea></div>
+    ${tokenButtonsHTML(e,'ev-fail')}<p class="prev" id="ev-fail-prev">${previewHTML(e,e.failText)}</p>
     <p class="hint">Efectos si no sale bien</p>
     ${blocks?fxZoneHTML(e,'fxFail'):`${e.fxFail.length?e.fxFail.map((f,i)=>fxHTML(e,f,i,'fxFail')).join(''):'<p class="hint">Sin efectos: solo se cuenta lo que pasó.</p>'}
     <div><button type="button" class="btn sm" data-act="fx-add" data-list="fxFail">Agregar efecto</button></div>`}</div>
@@ -134,7 +136,7 @@ Object.assign(BIND,{
   'ch-pct'(t){const {c}=stepOwner(t),v=parseFloat(t.value);if(c&&isFinite(v)){c.pct=Math.min(100,Math.max(0,v));touch();}},
   'ch-stat'(t){const {c}=stepOwner(t);if(c){c.stat=t.value;structural();}},
   'out-name'(t){const e=curEv(),o=e&&(e.outs||[]).find(x=>x.id===t.dataset.o);if(o){o.name=t.value;touch();}},
-  'out-text'(t){const e=curEv(),o=e&&(e.outs||[]).find(x=>x.id===t.dataset.o);if(o){o.text=t.value;touch();}},
+  'out-text'(t){const e=curEv(),o=e&&(e.outs||[]).find(x=>x.id===t.dataset.o);if(o){setEvText(e,'out-text-'+o.id,t.value);touch();}},
   'st-op'(t){const st=curStep(t);if(st){st.op=STEP_OPS.includes(t.value)?t.value:'add';if(st.op!=='add')st.kind='num';if(st.op==='mult'&&st.num===10)st.num=1;structural();}},
   'st-kind'(t){const st=curStep(t);if(st){st.kind=STEP_KINDS.includes(t.value)?t.value:'num';structural();}},
   'st-num'(t){const st=curStep(t),v=parseFloat(t.value);if(st&&isFinite(v)){st.num=v;touch();}},

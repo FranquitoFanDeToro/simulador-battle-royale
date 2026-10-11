@@ -7,7 +7,7 @@
      v: 6,
      stats:    [{id, name, def, min, max}]           catálogo de stats (min/max: límite propio; null = sin límite)
      items:    [{id, name, size, cat, icon, img}]    objetos (size = espacio; icon = emoji; img = imagen opcional)
-     skills:   [{id, name, cat, icon, img}]          habilidades
+     skills:   [{id, name, cat, icon, img, cd:{mode:'none'|'days'|'once', days}}]          habilidades
      emotions: [{id, name, icon, days}]              emociones (days: se pasa sola; 0 = no)
      states:   [{id, name, icon, cat, days, canAct, text,  estados alterados (quemadura, veneno…)
                  mods:[{stat, mode:'add'|'mult', num}],     cambian stats mientras dura
@@ -46,7 +46,7 @@ function nextRoleName(roles){
   for(let i=0;i<MAX_ROLES;i++) if(!used.has(roleName(i))) return roleName(i);
   return roleName(roles.length);
 }
-const KINDS=['item','space','skill','gender','status','hasstat','stat','statvs','emotion','loyalty','inteam','isleader','sameteam','teamsize','teamitem','is','state','anystate'];
+const KINDS=['item','space','skill','skillready','gender','status','hasstat','stat','statvs','emotion','loyalty','inteam','isleader','sameteam','teamsize','teamitem','is','state','anystate'];
 const NOVAL=['inteam','isleader','sameteam','teamsize','loyalty','anystate'];   // reglas que no eligen un valor de una lista
 const CMP=['>=','>','<=','<','=','!='];
 const CMP_LBL={'>=':'≥','>':'>','<=':'≤','<':'<','=':'=','!=':'≠'};
@@ -56,6 +56,7 @@ const FX={
   removeItem:{label:'Quita el objeto',ref:'items',prep:'de'},
   giveSkill:{label:'Otorga la habilidad',ref:'skills',prep:'a'},
   removeSkill:{label:'Quita la habilidad',ref:'skills',prep:'de'},
+  useSkill:{label:'Marca como usada la habilidad',ref:'skills',prep:'de'},
   stat:{label:'Cambia la stat',ref:'stats',prep:'de'},
   emotion:{label:'Cambia la emoción a',ref:'emotions',prep:'de'},
   emotionClear:{label:'Quita la emoción',ref:null,prep:'de'},
@@ -86,7 +87,7 @@ function nextVarName(list,kind){
 }
 const TEAM_FX=['teamForm','teamJoin','moveItem','swapItems'];     // efectos que necesitan un segundo participante (campo «by»)
 const CHANCE_MODES=['always','fixed','stat','team','loyalty','calc'];
-const MULTI_FX=['kill','giveItem','removeItem','giveSkill','removeSkill','stat','emotion','emotionClear','loyalty','teamJoin','teamLeave','teamShare','teamTake','addState','removeState','clearStates'];   // efectos que pueden afectar a varios participantes
+const MULTI_FX=['kill','giveItem','removeItem','giveSkill','removeSkill','useSkill','stat','emotion','emotionClear','loyalty','teamJoin','teamLeave','teamShare','teamTake','addState','removeState','clearStates'];   // efectos que pueden afectar a varios participantes
 const CHANCE_LBL={
   always:'Siempre ocurre tal cual',
   fixed:'Probabilidad fija',
@@ -163,7 +164,7 @@ function sampleProject(){
     skills:[
       {id:K.si,name:'Sigilo',cat:'Movimiento',icon:'🥷',img:null},
       {id:K.pu,name:'Puntería',cat:'Combate',icon:'🎯',img:null},
-      {id:K.au,name:'Primeros auxilios',cat:'Salud',icon:'⛑️',img:null}
+      {id:K.au,name:'Primeros auxilios',cat:'Salud',icon:'⛑️',img:null,cd:{mode:'days',days:3}}
     ],
     chars:[
       C('Valeria','f',[],[],{[T.fu]:4,[T.ag]:7}),
@@ -182,7 +183,7 @@ function sampleProject(){
       E('{X} le disparó una flecha a {Y} desde lejos.',3,[X,Y],G('and',R('X','item',I.ar),NM(),G('or',R('X','skill',K.pu),R('Y','skill',K.si,true))),[{k:'kill',role:'Y'}]),
       E('{X} encontró un botiquín.',2,[X],G('and',R('X','item',I.bo,true),R('X','space',I.bo)),[{k:'giveItem',role:'X',ref:I.bo}]),
       E('{X} usó el botiquín para curarse las heridas.',2,[X],G('and',R('X','item',I.bo)),[{k:'removeItem',role:'X',ref:I.bo}]),
-      E('{X} curó las heridas de {Y} y se ganó su confianza.',2,[X,Y],G('and',R('X','item',I.bo),R('X','skill',K.au)),[{k:'removeItem',role:'X',ref:I.bo}]),
+      E('{X} curó las heridas de {Y} y se ganó su confianza.',2,[X,Y],G('and',R('X','item',I.bo),R('X','skillready',K.au)),[{k:'removeItem',role:'X',ref:I.bo}]),
       E('{X} le robó el cuchillo a {Y} mientras dormía.',3,[X,Y],G('and',R('Y','item',I.cu),R('X','item',I.cu,true),R('X','skill',K.si),R('X','space',I.cu),NM()),[{k:'removeItem',role:'Y',ref:I.cu},{k:'giveItem',role:'X',ref:I.cu}]),
       E('{X} desarmó a {Y} en un forcejeo y se quedó con su cuchillo.',3,[X,Y],G('and',R('Y','item',I.cu),R('X','item',I.cu,true),R('X','space',I.cu),R('X','statvs',T.fu,false,{op:'>',role2:'Y'}),NM()),[{k:'removeItem',role:'Y',ref:I.cu},{k:'giveItem',role:'X',ref:I.cu}]),
       E('{X} entrenó toda la mañana y ganó fuerza.',2,[X],G('and',R('X','hasstat',T.fu)),[{k:'stat',role:'X',ref:T.fu,mode:'add',num:1}]),
@@ -341,7 +342,7 @@ function normalize(p){
     return {id:String(i.id),name:String(i.name||''),def:d,min:mn,max:mx};
   });
   o.items=arr(p.items).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),size:Math.max(0,Math.floor(num(i.size,1))),cat:String(i.cat||''),icon:String(i.icon||'').slice(0,8),img:normImg(i.img)}));
-  o.skills=arr(p.skills).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),cat:String(i.cat||''),icon:String(i.icon||'').slice(0,8),img:normImg(i.img)}));
+  o.skills=arr(p.skills).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),cat:String(i.cat||''),icon:String(i.icon||'').slice(0,8),img:normImg(i.img),cd:normCd(i.cd)}));
   o.emotions=arr(p.emotions).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),icon:String(i.icon||'').slice(0,8),days:Math.max(0,Math.floor(num(i.days,0)))}));
   o.states=arr(p.states).filter(i=>i&&i.id).map(i=>({
     id:String(i.id),name:String(i.name||''),icon:String(i.icon||'').slice(0,8),cat:String(i.cat||''),days:Math.max(0,Math.floor(num(i.days,0))),
@@ -460,11 +461,43 @@ const and3=(a,b)=>(a===false||b===false)?false:((a===true&&b===true)?true:undefi
 const or3=(a,b)=>(a===true||b===true)?true:((a===false&&b===false)?false:undefined);
 const allOf3=v=>v.reduce(and3,true);
 const anyOf3=v=>v.reduce(or3,false);
+/* Tiempo muerto de una habilidad: sin (se puede repetir todos los días), cada N días o una sola vez. */
+const CD_MODES=['none','days','once'];
+function normCd(c){
+  const mode=c&&CD_MODES.includes(c.mode)?c.mode:'none';
+  return {mode,days:(d=>Math.max(1,Math.min(999,isFinite(d)?Math.floor(d):3)))(parseFloat(c&&c.days))};
+}
+function skillReady(ch,id){
+  const s=P.skills.find(x=>x.id===id),cd=s&&s.cd;
+  if(!cd||cd.mode==='none') return true;
+  const last=ch.skillUse?ch.skillUse[id]:null;
+  if(last==null) return true;
+  if(cd.mode==='once') return false;
+  return (CURSIM?CURSIM.day:0)-last>=cd.days;
+}
+/* Días que faltan para que la habilidad vuelva a estar lista (0 = lista; -1 = ya no se puede usar más). */
+function skillWait(ch,id,day){
+  const s=P.skills.find(x=>x.id===id),cd=s&&s.cd;
+  if(!cd||cd.mode==='none'||!ch.skillUse||ch.skillUse[id]==null) return 0;
+  if(cd.mode==='once') return -1;
+  return Math.max(0,cd.days-(day-ch.skillUse[id]));
+}
+function markSkill(ch,id,day){if(ch&&id){(ch.skillUse=ch.skillUse||{})[id]=day;}}
+/* Las reglas «habilidad lista» de un evento gastan la habilidad cuando el evento ocurre. */
+function markSkillRules(e,as,sim){
+  const walk=(n,neg)=>{
+    if(n.t==='g'){n.c.forEach(c=>walk(c,neg||n.op==='not'));return;}
+    if(n.kind!=='skillready'||n.neg||neg||!n.val) return;
+    [n.role].concat(n.more||[]).forEach(r=>markSkill(as[r],n.val,sim.day));
+  };
+  walk(e.cond,false);
+}
 function ruleOne(n,ch,as){
   switch(n.kind){
     case 'item': return !!n.val&&ch.items.has(n.val);
     case 'space': {const it=P.items.find(i=>i.id===n.val);return !!it&&slotsFree(ch)>=it.size;}
     case 'skill': return !!n.val&&ch.skills.has(n.val);
+    case 'skillready': return !!n.val&&ch.skills.has(n.val)&&skillReady(ch,n.val);
     case 'gender': return ch.gender===n.val;
     case 'status': return (n.val==='dead')?!ch.alive:ch.alive;
     case 'hasstat': return !!n.val&&hasStat(ch,n.val);
@@ -526,7 +559,7 @@ function newSim(){
       Object.keys(c.stats).forEach(id=>{if(P.stats.some(s=>s.id===id))stats[id]=c.stats[id];});
       return {
         id:c.id,name:c.name||'Sin nombre',gender:c.gender,imgs:c.imgs,slots:c.slots,
-        items:new Set(okIds(P.items,c.items)),skills:new Set(okIds(P.skills,c.skills)),stats,
+        items:new Set(okIds(P.items,c.items)),skills:new Set(okIds(P.skills,c.skills)),skillUse:{},stats,
         loy:c.loy,emotion:c.emotion,emoDay:0,team:null,
         states:okIds(P.states,c.states||[]).map(id=>({id,day:0})),
         alive:true,kills:0,victims:[],killedBy:null,diedDay:null
@@ -787,6 +820,7 @@ function applyFx(list,as,actor,sim,entry){
     } else if(f.k==='removeItem'&&f.ref) t.items.delete(f.ref);
     else if(f.k==='giveSkill'&&f.ref) t.skills.add(f.ref);
     else if(f.k==='removeSkill'&&f.ref) t.skills.delete(f.ref);
+    else if(f.k==='useSkill'&&f.ref){markSkill(t,f.ref,sim.day);}
     else if(f.k==='stat'&&f.ref){
       if(!hasStat(t,f.ref)){entry.notes.push(t.name+' no tiene la stat '+nameOf(P.stats,f.ref)+', no cambia.');continue;}
       const want=f.mode==='set'?f.num:t.stats[f.ref]+f.num,got=clampStat(f.ref,want);
@@ -811,6 +845,7 @@ function chaosShake(sim,level){
     c.items=new Set();
     shuffle(P.items.slice()).forEach(it=>{if(Math.random()<0.5&&slotsFree(c)>=it.size)c.items.add(it.id);});
     c.skills=new Set(P.skills.filter(()=>Math.random()<0.4).map(s=>s.id));
+    c.skillUse={};
     c.loy=Math.floor(Math.random()*101);
     c.states=P.states.filter(()=>Math.random()<0.2).map(x=>({id:x.id,day:sim.day}));
     if(P.emotions.length&&Math.random()<0.6){c.emotion=P.emotions[Math.floor(Math.random()*P.emotions.length)].id;c.emoDay=sim.day;}
@@ -963,6 +998,7 @@ function playDay(sim,opts){
       chance:(!(e.outs&&e.outs.length)&&e.chance&&e.chance.mode!=='always')?Math.round(successChance(e,as)*100):null,
       outcome:(e.outs&&e.outs.length)?{name:oc.out?(oc.out.name.trim()||'Desenlace extra'):(oc.fail?'No sale bien':'Sale bien'),pct:oc.pct}:null
     };
+    markSkillRules(e,as,sim);
     applyFx(oc.out?oc.out.fx:(oc.fail?e.fxFail:e.fx),as,actor,sim,entry);
     finishGroups(entry,sim);
     entries.push(entry);

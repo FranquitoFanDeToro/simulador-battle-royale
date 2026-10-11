@@ -19,7 +19,7 @@ const RULE_CAT={
   gender:'char',status:'char',is:'char',
   state:'state',anystate:'state',
   item:'item',space:'item',teamitem:'item',
-  skill:'skill',
+  skill:'skill',skillready:'skill',
   hasstat:'stat',stat:'stat',statvs:'stat',
   emotion:'emo',
   loyalty:'team',inteam:'team',isleader:'team',sameteam:'team',teamsize:'team'
@@ -27,7 +27,7 @@ const RULE_CAT={
 const FX_CAT={
   kill:'kill',
   giveItem:'item',removeItem:'item',teamTake:'item',
-  giveSkill:'skill',removeSkill:'skill',
+  giveSkill:'skill',removeSkill:'skill',useSkill:'skill',
   stat:'stat',
   emotion:'emo',emotionClear:'emo',
   loyalty:'team',teamForm:'team',teamJoin:'team',teamLeave:'team',teamShare:'team',

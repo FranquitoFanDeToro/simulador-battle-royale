@@ -18,7 +18,7 @@ const REQ=[['alive','Debe estar vivo'],['dead','Debe estar muerto'],['any','Vivo
 const OPS={and:'Y · todas',or:'O · alguna',not:'NO · ninguna',mix:'Y/O · combinadas'};
 const EXPL={and:'Se cumplen todas las reglas de este grupo.',or:'Se cumple al menos una de estas reglas.',not:'No se cumple ninguna de estas reglas.',mix:'Tocá la Y / O entre dos reglas para cambiar cómo se unen. La Y se resuelve antes que la O: «A y B o C» es «(A y B) o C». Para otro orden, usá un grupo.'};
 const KIND_LBL={
-  item:'tiene el objeto',space:'tiene espacio para',skill:'tiene la habilidad',gender:'es de sexo',status:'está',
+  item:'tiene el objeto',space:'tiene espacio para',skill:'tiene la habilidad',skillready:'puede usar la habilidad',gender:'es de sexo',status:'está',
   hasstat:'posee la stat',stat:'con valor de',statvs:'compara la stat',
   emotion:'siente',loyalty:'tiene lealtad',inteam:'tiene equipo',isleader:'es líder de su equipo',
   sameteam:'está en el mismo equipo que',teamsize:'tiene un equipo de tamaño',teamitem:'tiene (propio o compartido) el objeto',
@@ -27,7 +27,7 @@ const KIND_LBL={
 const KL={
   emotions:{title:'Emociones',noun:'emoción',ph:'Ej: Miedo',hint:'Una emoción es un estado de ánimo que un personaje puede sentir (de a una por vez). Los eventos pueden pedirla como condición, otorgarla o quitarla. Si «dura» algunos días, se pasa sola. Si el personaje tiene una imagen con una etiqueta igual al nombre de la emoción, esa imagen se muestra mientras la siente.'},
   items:{title:'Objetos',noun:'objeto',ph:'Ej: Cuchillo',hint:'Un objeto ocupa espacio (tamaño) en el inventario de un personaje. Los eventos pueden pedirlo como condición, entregarlo o quitarlo. La categoría sirve para marcar grupos enteros de una vez.'},
-  skills:{title:'Habilidades',noun:'habilidad',ph:'Ej: Sigilo',hint:'Una habilidad es algo que un personaje sabe hacer. Los eventos pueden pedirla como condición, otorgarla o quitarla.'},
+  skills:{title:'Habilidades',noun:'habilidad',ph:'Ej: Sigilo',hint:'Una habilidad es algo que un personaje sabe hacer. Los eventos pueden pedirla como condición, otorgarla o quitarla. El tiempo muerto define cada cuánto se puede usar: sin espera, cada tantos días o una sola vez; se aplica con la regla «puede usar la habilidad», que la gasta cuando el evento ocurre (el efecto «Marca como usada» la gasta a mano).'},
   stats:{title:'Stats',noun:'stat',ph:'Ej: Fuerza',hint:'Una stat es un número que algunos personajes tienen (fuerza, agilidad, hambre…). No es universal: lo que un personaje no tiene vale 0 y los eventos no pueden cambiárselo. El valor inicial se usa al agregarla a un personaje.'}
 };
 
@@ -72,24 +72,25 @@ function avS(name,src,cls){
 }
 const av=(c,cls)=>avS(nm(c),lookFor(c,''),cls);
 const tkHTML=t=>esc(t).replace(TOKEN_RE,'<span class="tk">$1</span>');
-function previewHTML(e){
+function previewHTML(e,txt){
+  if(txt==null) txt=e.text;
   const as={};
   e.roles.forEach((r,i)=>{as[r.n]={name:P.chars[i]?nm(P.chars[i]):r.n};});
   as.vs={};(e.vars||[]).forEach(v=>{as.vs[v.n]={label:v.n};});
-  return e.text.trim()?fmt(e.text,as):'<span class="hint">Escribí el texto del evento.</span>';
+  return txt.trim()?fmt(txt,as):'<span class="hint">Escribí el texto.</span>';
 }
 
 /* ---------- Referencias y validación ---------- */
 function walkRules(n,fn){if(n.t==='g')n.c.forEach(c=>walkRules(c,fn));else fn(n);}
 function countRules(n){let k=0;walkRules(n,()=>{k++;});return k;}
-const refListOf=kind=>({item:'items',space:'items',teamitem:'items',skill:'skills',hasstat:'stats',stat:'stats',statvs:'stats',emotion:'emotions',is:'chars',state:'states'}[kind]||null);
+const refListOf=kind=>({item:'items',space:'items',teamitem:'items',skill:'skills',skillready:'skills',hasstat:'stats',stat:'stats',statvs:'stats',emotion:'emotions',is:'chars',state:'states'}[kind]||null);
 const RULE_NEEDS_ROLE2=['statvs','sameteam'];
 const RULE_NEEDS_CMP=['stat','statvs','teamsize','loyalty'];
 const RULE_NEEDS_NUM=['stat','teamsize','loyalty'];
 const allFx=e=>e.fx.concat(e.fxFail,...(e.outs||[]).map(o=>o.fx));
 const allChances=e=>[e.chance].concat((e.outs||[]).map(o=>o.chance));
 function usage(kind,id){
-  const fk={items:['giveItem','removeItem','teamTake'],skills:['giveSkill','removeSkill'],stats:['stat'],emotions:['emotion'],states:['addState','removeState']}[kind];
+  const fk={items:['giveItem','removeItem','teamTake'],skills:['giveSkill','removeSkill','useSkill'],stats:['stat'],emotions:['emotion'],states:['addState','removeState']}[kind];
   if(kind==='items') fk.push('moveItem','swapItems');
   const ev=P.events.filter(e=>{
     let hit=false;
@@ -178,7 +179,7 @@ function allTags(){
 /* ---------- Estructura general ---------- */
 function renderTabs(){
   const T=[['chars','Personajes',P.chars.length],['teams','Equipos',P.teams.length],['items','Objetos',P.items.length],['skills','Habilidades',P.skills.length],['stats','Stats',P.stats.length],['emotions','Emociones',P.emotions.length],['states','Estados',P.states.length],['events','Eventos',P.events.length],['sim','Simulación',null],['data','Datos',null]];
-  tabsEl.innerHTML=T.map(t=>`<button type="button" class="${ui.tab===t[0]?'on':''}" ${ui.tab===t[0]?'aria-current="page"':''} data-act="tab" data-tab="${t[0]}">${t[1]}${t[2]!=null?`<span class="n">${t[2]}</span>`:''}</button>`).join('');
+  tabsEl.innerHTML=T.map(t=>`<button type="button" class="${ui.tab===t[0]?'on':''}" ${ui.tab===t[0]?'aria-current="page"':''} data-act="tab" data-tab="${t[0]}">${icon(t[0])}<span class="tl">${t[1]}</span>${t[2]!=null?`<span class="n">${t[2]}</span>`:''}</button>`).join('');
 }
 function render(){
   renderTabs();
@@ -270,7 +271,7 @@ function selBar(){
   <div class="acts"><button type="button" class="btn sm dng" data-act="sel-del" data-confirm="¿Eliminar? Tocá otra vez">Eliminar seleccionados</button></div></div>`;
 }
 function vChars(){
-  if(ui.char){const c=curChar();if(c)return vCharForm(c);ui.char=null;}
+  if(ui.char){const c=curChar();if(c)return withNav('char',vCharForm(c));ui.char=null;}
   return `<div class="bar"><h2 class="h2">Personajes</h2><div class="acts">
   <button type="button" class="btn pri" data-act="char-new">Nuevo personaje</button>
   <button type="button" class="btn" data-act="bulk-toggle">Agregar varios</button>
@@ -366,7 +367,12 @@ function tagFieldsHTML(kind,i){
   if(kind==='items') return `<div class="mini"><label>Tamaño</label><input type="number" min="0" value="${i.size}" data-bind="tag-size" data-id="${i.id}"></div>`+cat+iconFieldsHTML(kind,i);
   if(kind==='stats') return `<div class="mini"><label>Valor inicial</label><input type="number" step="any" value="${i.def}" data-bind="tag-def" data-id="${i.id}"></div><div class="mini"><label>Mínimo</label><input type="number" step="any" value="${i.min==null?'':i.min}" placeholder="sin límite" data-commit data-bind="tag-min" data-id="${i.id}" style="width:110px"></div><div class="mini"><label>Máximo</label><input type="number" step="any" value="${i.max==null?'':i.max}" placeholder="sin límite" data-commit data-bind="tag-max" data-id="${i.id}" style="width:110px"></div>`;
   if(kind==='emotions') return `<div class="mini"><label>Ícono</label><input type="text" style="width:80px" maxlength="8" value="${esc(i.icon)}" data-bind="tag-icon" data-kind="emotions" data-id="${i.id}" autocomplete="off"></div><div class="mini"><label>Dura (días, 0 = no se pasa)</label><input type="number" min="0" value="${i.days}" data-bind="tag-days" data-id="${i.id}"></div>`;
-  return cat+iconFieldsHTML(kind,i);
+  return cat+iconFieldsHTML(kind,i)+cdFieldsHTML(i);
+}
+/* Tiempo muerto (cooldown) de una habilidad. */
+function cdFieldsHTML(i){
+  const cd=i.cd||{mode:'none',days:3},o=(v,t)=>`<option value="${v}" ${cd.mode===v?'selected':''}>${t}</option>`;
+  return `<div class="mini"><label>Tiempo muerto</label><div class="acts"><select data-bind="tag-cd-mode" data-id="${i.id}" aria-label="Cada cuánto se puede usar">${o('none','Sin espera (se puede repetir)')}${o('days','Cada cierta cantidad de días')}${o('once','Una sola vez en la partida')}</select>${cd.mode==='days'?`<input type="number" min="1" max="999" value="${cd.days}" style="width:70px" data-bind="tag-cd-days" data-id="${i.id}" aria-label="Días de espera"><span class="hint">días</span>`:''}</div></div>`;
 }
 function tagRowsHTML(kind){
   if(!P[kind].length) return '<p class="empty">Todavía no hay nada acá. Agregá el primero arriba.</p>';
@@ -532,7 +538,7 @@ function setRuleKind(e,r,kind){
 }
 function newRule(e){return {t:'r',neg:false,role:'X',more:[],q:'all',j:'and',kind:'item',val:defaultVal('item'),op:'>=',num:1,role2:e.roles[1]?e.roles[1].n:'X'};}
 function vEvents(){
-  if(ui.ev){const e=curEv();if(e)return vEventForm(e);ui.ev=null;}
+  if(ui.ev){const e=curEv();if(e)return withNav('ev',vEventForm(e));ui.ev=null;}
   return `<div class="bar"><h2 class="h2">Eventos</h2><div class="acts"><button type="button" class="btn pri" data-act="ev-new">Nuevo evento</button></div></div>
   <div class="fbar"><input type="search" placeholder="Buscar en el texto…" value="${esc(ui.q.events)}" data-bind="q" data-k="events" aria-label="Buscar eventos">
   <select data-bind="ev-filter" aria-label="Filtrar"><option value="">Todos</option><option value="kill" ${ui.evf==='kill'?'selected':''}>Los que eliminan</option><option value="issues" ${ui.evf==='issues'?'selected':''}>Para revisar</option></select>
@@ -541,10 +547,20 @@ function vEvents(){
 }
 const maxRoles=()=>Math.max(2,P.chars.length);
 /* Botones para insertar {X}, {Objeto1}… en el texto; con muchos participantes pasan a un selector. */
-function tokenButtonsHTML(e){
+/* Los tres tipos de texto de un evento: el principal, el de «no sale bien» y el de cada desenlace extra.
+   Cada uno tiene su cuadro (id) y su vista previa (id + '-prev'). */
+function setEvText(e,id,v){
+  if(id==='ev-text') e.text=v;
+  else if(id==='ev-fail') e.failText=v;
+  else if(id.indexOf('out-text-')===0){const o=(e.outs||[]).find(x=>x.id===id.slice(9));if(o)o.text=v;}
+  const p=document.getElementById(id==='ev-text'?'ev-prev':id+'-prev');
+  if(p) p.innerHTML=previewHTML(e,v);
+}
+function tokenButtonsHTML(e,target){
+  target=target||'ev-text';
   const names=e.roles.map(r=>r.n),vars=(e.vars||[]).map(v=>v.n);
-  if(names.length+vars.length<=8) return `<div class="acts">${names.concat(vars).map(n=>`<button type="button" class="btn sm" data-act="token" data-t="${n}">Insertar {${n}}</button>`).join('')}</div>`;
-  return `<div class="acts"><select class="addsel" data-bind="token-ins" aria-label="Insertar en el texto"><option value="">＋ Insertar participante o elemento…</option><optgroup label="Participantes">${names.map(n=>`<option value="${n}">{${n}}</option>`).join('')}</optgroup>${vars.length?`<optgroup label="Elementos">${vars.map(n=>`<option value="${n}">{${n}}</option>`).join('')}</optgroup>`:''}</select></div>`;
+  if(names.length+vars.length<=8) return `<div class="acts">${names.concat(vars).map(n=>`<button type="button" class="btn sm" data-act="token" data-t="${n}" data-target="${target}">Insertar {${n}}</button>`).join('')}</div>`;
+  return `<div class="acts"><select class="addsel" data-bind="token-ins" data-target="${target}" aria-label="Insertar en el texto"><option value="">＋ Insertar participante o elemento…</option><optgroup label="Participantes">${names.map(n=>`<option value="${n}">{${n}}</option>`).join('')}</optgroup>${vars.length?`<optgroup label="Elementos">${vars.map(n=>`<option value="${n}">{${n}}</option>`).join('')}</optgroup>`:''}</select></div>`;
 }
 function vEventForm(e){
   const iss=issues(e);
@@ -603,7 +619,11 @@ function simDetail(s){
   if(!c) return '';
   const chip=(list,id)=>{const o=list.find(x=>x.id===id);return o?ico(o)+esc(o.name||'Sin nombre'):'';};
   const items=[...c.items].map(id=>chip(P.items,id)).filter(Boolean);
-  const skills=[...c.skills].map(id=>chip(P.skills,id)).filter(Boolean);
+  const skills=[...c.skills].map(id=>{
+    const h=chip(P.skills,id);if(!h)return '';
+    const w=skillWait(c,id,s.day);
+    return h+(w<0?` <small>${icon('cooldown')} ya usada: no se repite</small>`:(w>0?` <small>${icon('cooldown')} lista en ${plural(w,'día','días')}</small>`:''));
+  }).filter(Boolean);
   const stats=Object.keys(c.stats).map(id=>({n:nameOf(P.stats,id),v:c.stats[id],e:effStat(c,id)})).filter(x=>x.n);
   const sts=c.states.map(x=>({d:stateDef(x.id),x})).filter(o=>o.d);
   const t=teamOfIn(s,c),em=emoOf(c);
@@ -753,7 +773,7 @@ function tagAdd(kind){
   const name=$('#new-name').value.trim();if(!name)return;
   const o={id:uid(),name};
   if(kind==='items'){const v=parseInt($('#new-size').value,10);o.size=isNaN(v)?1:Math.max(0,v);o.cat=$('#new-cat').value.trim();o.icon=$('#new-icon').value.trim();o.img=null;}
-  else if(kind==='skills'){o.cat=$('#new-cat').value.trim();o.icon=$('#new-icon').value.trim();o.img=null;}
+  else if(kind==='skills'){o.cat=$('#new-cat').value.trim();o.icon=$('#new-icon').value.trim();o.img=null;o.cd={mode:'none',days:3};}
   else if(kind==='emotions'){const v=parseInt($('#new-days').value,10);o.icon=$('#new-icon').value.trim();o.days=isNaN(v)?0:Math.max(0,v);}
   else{const v=parseFloat($('#new-def').value);o.def=isFinite(v)?v:5;o.min=null;o.max=null;}
   P[kind].push(o);structural();
@@ -903,11 +923,11 @@ const ACT={
   },
   'ev-del'(){P.events=P.events.filter(e=>e.id!==ui.ev);ui.ev=null;structural();toast('Evento eliminado');},
   token(b){
-    const e=curEv(),t=$('#ev-text');if(!e||!t)return;
+    const e=curEv(),id=b.dataset.target||'ev-text',t=document.getElementById(id);if(!e||!t)return;
     const tok='{'+b.dataset.t+'}',a=t.selectionStart,z=t.selectionEnd;
     t.value=t.value.slice(0,a)+tok+t.value.slice(z);
     t.focus();t.selectionStart=t.selectionEnd=a+tok.length;
-    e.text=t.value;$('#ev-prev').innerHTML=previewHTML(e);touch();
+    setEvText(e,id,t.value);touch();
   },
   'role-add'(){const e=curEv();if(!e||e.roles.length>=maxRoles())return;e.roles.push({n:nextRoleName(e.roles),req:'alive',look:'',squad:false});structural();},
   'role-del'(){const e=curEv();if(!e||e.roles.length<2)return;dropRole(e,e.roles.pop().n);structural();},
@@ -1009,7 +1029,7 @@ const BIND={
   'tag-size'(t){const x=P.items.find(i=>i.id===t.dataset.id);const v=parseInt(t.value,10);if(x&&!isNaN(v)){x.size=Math.max(0,v);touch();}},
   'tag-def'(t){const x=P.stats.find(i=>i.id===t.dataset.id);const v=parseFloat(t.value);if(x&&isFinite(v)){x.def=clampStat(x.id,v);touch();t.addEventListener('blur',()=>{t.value=x.def;},{once:true});}},
   'tag-cat'(t){const x=P[t.dataset.kind].find(i=>i.id===t.dataset.id);if(x){x.cat=t.value.trim();touch();}},
-  'ev-text'(t){const e=curEv();if(e){e.text=t.value;$('#ev-prev').innerHTML=previewHTML(e);touch();}},
+  'ev-text'(t){const e=curEv();if(e){setEvText(e,'ev-text',t.value);touch();}},
   'ev-weight'(t){const e=curEv();if(e){e.weight=+t.value;$('#ev-w').textContent=t.value;touch();}},
   'role-req'(t){const e=curEv();if(e){e.roles[+t.dataset.i].req=t.value;touch();}},
   'role-look'(t){const e=curEv();if(e){e.roles[+t.dataset.i].look=t.value;touch();}},
@@ -1030,7 +1050,7 @@ const BIND={
     while(e.roles.length>n) dropRole(e,e.roles.pop().n);
     structural();
   },
-  'token-ins'(t){if(t.value){ACT.token({dataset:{t:t.value}});t.value='';}},
+  'token-ins'(t){if(t.value){ACT.token({dataset:{t:t.value,target:t.dataset.target}});t.value='';}},
   'rule-role2'(t){const e=curEv();nodeAtE(e,t.dataset.path).role2=t.value;structural();},
   'fx-k'(t){const e=curEv();setFxKind(e,fxList(e,t.dataset.list)[+t.dataset.i],t.value);structural();},
   'fx-ref'(t){const e=curEv();fxList(e,t.dataset.list)[+t.dataset.i].ref=t.value;structural();},
@@ -1040,7 +1060,7 @@ const BIND={
   'fx-mode'(t){const e=curEv();fxList(e,t.dataset.list)[+t.dataset.i].mode=t.value;touch();},
   'fx-nm'(t){const e=curEv();fxList(e,t.dataset.list)[+t.dataset.i].nm=t.value;touch();},
   'fx-num'(t){const e=curEv();const v=parseFloat(t.value);if(isFinite(v)){fxList(e,t.dataset.list)[+t.dataset.i].num=v;touch();}},
-  'ev-fail'(t){const e=curEv();if(e){e.failText=t.value;touch();}},
+  'ev-fail'(t){const e=curEv();if(e){setEvText(e,'ev-fail',t.value);touch();}},
   'char-loy'(t){const c=curChar();const v=parseFloat(t.value);if(c&&isFinite(v)){c.loy=Math.min(100,Math.max(0,v));touch();}},
   'char-emotion'(t){const c=curChar();if(c){c.emotion=t.value;touch();}},
   'char-state'(t){
@@ -1067,6 +1087,8 @@ const BIND={
     if(k==='num'){const v=parseFloat(t.value);ui.cf.num=isFinite(v)?v:0;}else ui.cf[k]=t.value;
     refreshList('chars');
   },
+  'tag-cd-mode'(t){const x=P.skills.find(i=>i.id===t.dataset.id);if(x){x.cd=normCd({mode:t.value,days:x.cd?x.cd.days:3});structural();}},
+  'tag-cd-days'(t){const x=P.skills.find(i=>i.id===t.dataset.id),v=parseInt(t.value,10);if(x&&!isNaN(v)){x.cd=normCd({mode:'days',days:v});touch();}},
   'tag-days'(t){const x=P.emotions.find(i=>i.id===t.dataset.id);const v=parseInt(t.value,10);if(x&&!isNaN(v)){x.days=Math.max(0,v);touch();}},
   'shuffle-n'(t){ui.shuffleN=t.value;},
   'chaos-on'(t){ui.chaos=t.checked;},

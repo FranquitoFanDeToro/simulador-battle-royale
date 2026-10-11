@@ -66,6 +66,13 @@ Todavía no existen: los escenarios y «dividirse para buscar recursos».
 - **Probabilidad calculada con bloques**: se parte de un porcentaje base y cada paso (con su propia condición, también armada con bloques) suma, multiplica o fija el porcentaje; el valor puede salir de una stat, la diferencia de stats entre dos participantes, la lealtad o el tamaño de los equipos.
 - Los proyectos de versiones anteriores se actualizan solos al abrirlos (versión 6).
 
+## Novedades de la etapa 7: cooldown, navegación e íconos
+
+- **Tiempo muerto de habilidades**: en la pestaña Habilidades elegís, para cada una, «sin espera» (se puede repetir), «cada N días» o «una sola vez». Se aplica con la regla **«puede usar la habilidad»** (la gasta cuando el evento ocurre) y el efecto **«Marca como usada la habilidad»** para gastarla a mano. En la ficha de la simulación se ve cuándo vuelve a estar lista. El modo caos la reinicia.
+- **Anterior / siguiente** al abrir un personaje, equipo, estado o evento (respeta el orden y filtros de la lista).
+- **Botones {X}, {Y}…** también en el texto de cada desenlace y en «no sale bien», con vista previa.
+- **Íconos**: las pestañas tienen íconos propios. Para usar tus imágenes, ponelas en `img/` y escribí su ruta en `js/imagenes.js`.
+
 ## Qué hay en cada archivo
 
 | Archivo | Para qué sirve |
@@ -81,4 +88,8 @@ Todavía no existen: los escenarios y «dividirse para buscar recursos».
 | `js/interfaz-elementos.js` | Sección «Elementos del evento» (de dónde salen y filtros). |
 | `js/interfaz-resultado.js` | Sección «Resultado»: probabilidad por bloques y desenlaces. |
 | `js/interfaz-equipos.js` | Pantallas de equipos y vocabulario. |
+| `js/interfaz-nav.js` | Botones anterior / siguiente. |
+| `js/iconos.js` | Íconos de la interfaz. |
+| `js/imagenes.js` | Tus imágenes para reemplazar los íconos (opcional). |
+| `img/` | Carpeta para esas imágenes. |
 | `js/inicio.js` | Arranque. |
