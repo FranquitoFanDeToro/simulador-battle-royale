@@ -106,3 +106,24 @@ Todavía no existen: los escenarios y «dividirse para buscar recursos».
 | `js/imagenes.js` | Tus imágenes para reemplazar los íconos (opcional). |
 | `img/` | Carpeta para esas imágenes. |
 | `js/inicio.js` | Arranque. |
+
+## Etapa 9: editor de eventos rediseñado y novedades
+
+**Editor de eventos** (pestaña Eventos → abrir un evento):
+- El texto del evento está siempre arriba. Debajo, tres pestañas con un contador cada una:
+  - **Quiénes**: participantes, elementos del evento y escenarios.
+  - **Cuándo**: condiciones y frecuencia.
+  - **Qué pasa**: cómo termina el evento (desenlaces) y sus efectos.
+- Las explicaciones largas ya no ocupan lugar: cada sección tiene un botón **?** que abre una ventanita (se cierra con ✕, tocando afuera o con Esc). Los textos viven en `js/interfaz-ayuda.js` (objeto `HELP`).
+- **Desenlaces**: ahora son tarjetas en orden, con una barra de reparto arriba:
+  1. **Sale bien** (usa el texto del evento; sus efectos están dentro de la tarjeta),
+  2. desenlaces extra (nombre, probabilidad, texto y efectos),
+  3. **No sale bien**: lo que no se reparte entre los demás.
+  Se sortea **uno solo** y solo se aplican sus efectos. Cada tarjeta se pliega con ▾.
+- Bloques y formulario siguen editando lo mismo (interruptor a la derecha de las pestañas).
+
+**Otras novedades**
+- Probabilidad por stat/equipo contra un **valor fijo** (cuando no hay otro participante), también en los pasos del cálculo con bloques.
+- Efectos aplicables a **todo un equipo** (lealtad, stats, habilidades, objetos, emoción, estados, eliminar…).
+- El registro de la simulación muestra solo los elementos que **intervinieron** en el desenlace que ocurrió.
+- Efecto **«Cambia el espacio del inventario»** (suma o fija) y regla «tiene un inventario de tamaño».

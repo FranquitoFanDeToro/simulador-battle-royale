@@ -62,8 +62,7 @@ function varRow(e,v,i){
 }
 function varsSection(e){
   const vars=e.vars||[];
-  return `<section class="card sec"><h3 class="h3">Elementos del evento</h3>
-  <p class="hint">Un elemento es algo que el evento elige solo cuando ocurre: un objeto, una habilidad, un estado o un equipo. Después lo nombrás en el texto (por ejemplo {Objeto1}) y lo usás en los efectos. Elegí de dónde sale (lo que tiene un participante, todo el proyecto o una lista que armás a mano) y afinalo con filtros: categorías, lo que otros participantes tienen o no tienen, el tamaño… Si no se puede elegir (por ejemplo, Y no tiene ninguno), el evento no ocurre con esos personajes. Podés definir todos los que necesites.</p>
+  return `<section class="card sec"><div class="sh"><h3 class="h3">Elementos del evento</h3>${helpBtn('vars')}</div>
   ${vars.map((v,i)=>varRow(e,v,i)).join('')}
   <div><select class="addsel" data-bind="var-add" aria-label="Agregar elemento"><option value="">＋ Agregar elemento…</option>${Object.keys(VAR_KINDS).map(k=>`<option value="${k}">${VAR_KINDS[k].lbl}</option>`).join('')}</select></div></section>`;
 }
@@ -74,7 +73,7 @@ Object.assign(ACT,{
     const i=+b.dataset.i,v=e.vars[i];if(!v)return;
     e.vars.splice(i,1);
     /* los efectos que usaban este elemento quedan sin elegir (el aviso «Para revisar» lo marca) */
-    allFx(e).forEach(f=>{if(f.ref==='@'+v.n)f.ref='';if(f.ref2==='@'+v.n)f.ref2='';});
+    allFx(e).forEach(f=>{if(f.ref==='@'+v.n)f.ref='';if(f.ref2==='@'+v.n)f.ref2='';if(f.tgt==='@'+v.n)f.tgt='';});
     const clean=root=>walkRules(root,r=>{if(r.val==='@'+v.n)r.val='';});
     clean(e.cond);allChances(e).forEach(c=>(c.steps||[]).forEach(st=>clean(st.cond)));
     structural();

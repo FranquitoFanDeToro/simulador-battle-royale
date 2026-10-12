@@ -46,8 +46,8 @@ function nextRoleName(roles){
   for(let i=0;i<MAX_ROLES;i++) if(!used.has(roleName(i))) return roleName(i);
   return roleName(roles.length);
 }
-const KINDS=['item','space','skill','skillready','gender','status','hasstat','stat','statvs','emotion','loyalty','inteam','isleader','sameteam','teamsize','teamitem','scene','samescene','linkedscene','scenecount','sceneexit','linkedto','inteamof','is','state','anystate'];
-const NOVAL=['inteam','isleader','sameteam','teamsize','loyalty','anystate','samescene','linkedscene','scenecount','sceneexit'];   // reglas que no eligen un valor de una lista
+const KINDS=['item','space','skill','skillready','gender','status','hasstat','stat','statvs','emotion','loyalty','inteam','isleader','sameteam','teamsize','teamitem','slotsize','scene','samescene','linkedscene','scenecount','sceneexit','linkedto','inteamof','is','state','anystate'];
+const NOVAL=['inteam','isleader','sameteam','teamsize','loyalty','anystate','slotsize','samescene','linkedscene','scenecount','sceneexit'];   // reglas que no eligen un valor de una lista
 const CMP=['>=','>','<=','<','=','!='];
 const CMP_LBL={'>=':'≥','>':'>','<=':'≤','<':'<','=':'=','!=':'≠'};
 const FX={
@@ -58,6 +58,7 @@ const FX={
   removeSkill:{label:'Quita la habilidad',ref:'skills',prep:'de'},
   useSkill:{label:'Marca como usada la habilidad',ref:'skills',prep:'de'},
   stat:{label:'Cambia la stat',ref:'stats',prep:'de'},
+  slots:{label:'Cambia el espacio del inventario',ref:null,prep:'de'},
   emotion:{label:'Cambia la emoción a',ref:'emotions',prep:'de'},
   emotionClear:{label:'Quita la emoción',ref:null,prep:'de'},
   loyalty:{label:'Cambia la lealtad',ref:null,prep:'de'},
@@ -92,7 +93,9 @@ function nextVarName(list,kind){
 }
 const TEAM_FX=['teamForm','teamJoin','moveItem','swapItems','moveSceneWith'];     // efectos que necesitan un segundo participante (campo «by»)
 const CHANCE_MODES=['always','fixed','stat','team','loyalty','calc'];
-const MULTI_FX=['kill','giveItem','removeItem','giveSkill','removeSkill','useSkill','stat','emotion','emotionClear','loyalty','teamJoin','teamLeave','teamShare','teamTake','joinTeam','moveScene','moveSceneRandom','moveSceneLinked','moveSceneWith','addState','removeState','clearStates'];   // efectos que pueden afectar a varios participantes
+/* Efectos que se pueden aplicar a todo un equipo (campo «tgt»: 'team' = el equipo del participante, '@Equipo1' = un equipo del evento). */
+const GROUP_FX=['kill','giveItem','removeItem','giveSkill','removeSkill','useSkill','stat','slots','emotion','emotionClear','loyalty','addState','removeState','clearStates'];
+const MULTI_FX=['kill','giveItem','removeItem','giveSkill','removeSkill','useSkill','stat','slots','emotion','emotionClear','loyalty','teamJoin','teamLeave','teamShare','teamTake','joinTeam','moveScene','moveSceneRandom','moveSceneLinked','moveSceneWith','addState','removeState','clearStates'];   // efectos que pueden afectar a varios participantes
 const CHANCE_LBL={
   always:'Siempre ocurre tal cual',
   fixed:'Probabilidad fija',
@@ -254,6 +257,8 @@ function sampleProject(){
       [{k:'teamFight',role:'X',ref:'@Equipo1',ref2:'@Equipo2'}],
       {vars:[V('Equipo1','team','of','X'),V('Equipo2','team','any')]})
   );
+  /* mochilas: el efecto «cambia el espacio del inventario» */
+  proj.events.push(E('{X} encontró una mochila resistente y ahora puede cargar más cosas.',2,[X],G('and',R('X','slotsize','',false,{op:'<=',num:5})),[{k:'slots',role:'X',mode:'add',num:3}]));
   /* participantes sin límite, Y/O mezclados, probabilidad con varios factores y más de dos desenlaces */
   const Z=rl('Z');
   proj.events.push(
@@ -337,7 +342,8 @@ function normalize(p){
   const num=(v,d)=>{v=parseFloat(v);return isFinite(v)?v:d;};
   const normFx=l=>arr(l).filter(f=>f&&FX[f.k]).map(f=>({
     k:f.k,role:String(f.role||'X'),more:roleList(f.more,String(f.role||'X')),ref:f.ref?String(f.ref):'',ref2:f.ref2?String(f.ref2):'',by:String(f.by||''),
-    mode:f.mode==='set'?'set':'add',num:num(f.num,1),nm:['gen','preset','any'].includes(f.nm)?f.nm:'any'
+    mode:f.mode==='set'?'set':'add',num:num(f.num,1),nm:['gen','preset','any'].includes(f.nm)?f.nm:'any',
+    tgt:(GROUP_FX.includes(f.k)&&(f.tgt==='team'||/^@/.test(String(f.tgt||''))))?String(f.tgt):''
   }));
   const strList=x=>[...new Set((Array.isArray(x)?x:(x?[x]:[])).map(String).filter(Boolean))];
   const normVars=l=>{
@@ -359,7 +365,8 @@ function normalize(p){
     return {
       id:String((s&&s.id)||'').replace(/[^A-Za-z0-9]/g,'')||uid(),cond:(cond&&cond.t==='g')?cond:emptyCond(),op,
       kind:(op==='add'&&STEP_KINDS.includes(s&&s.kind))?s.kind:'num',num:num(s&&s.num,op==='mult'?1:10),
-      stat:String((s&&s.stat)||''),role:ROLE_RE.test(String(s&&s.role))?String(s.role):'X',role2:ROLE_RE.test(String(s&&s.role2))?String(s.role2):'Y'
+      stat:String((s&&s.stat)||''),role:ROLE_RE.test(String(s&&s.role))?String(s.role):'X',role2:ROLE_RE.test(String(s&&s.role2))?String(s.role2):'Y',
+      vs:(s&&s.vs==='fixed')?'fixed':'role',val:Math.max(0,num(s&&s.val,5))   // «contra»: otro participante o un valor fijo
     };
   };
   const normChance=(ch,extra)=>{
@@ -368,6 +375,8 @@ function normalize(p){
     return {
       mode:modes.includes(ch.mode)?ch.mode:(extra?'fixed':'always'),
       pct:Math.min(100,Math.max(0,num(ch.pct,50))),stat:String(ch.stat||''),
+      a:ROLE_RE.test(String(ch.a))?String(ch.a):'X',b:ROLE_RE.test(String(ch.b))?String(ch.b):'Y',   // quién se compara (a) y contra quién (b)
+      vs:ch.vs==='fixed'?'fixed':'role',val:Math.max(0,num(ch.val,5)),                           // o contra un valor fijo
       steps:arr(ch.steps).filter(x=>x&&typeof x==='object').map(normStep)
     };
   };
@@ -568,6 +577,7 @@ function ruleOne(n,ch,as){
     case 'item': return !!n.val&&ch.items.has(n.val);
     case 'space': {const it=P.items.find(i=>i.id===n.val);return !!it&&slotsFree(ch)>=it.size;}
     case 'skill': return !!n.val&&ch.skills.has(n.val);
+    case 'slotsize': return cmp(ch.slots,n.op,n.num);
     case 'scene': return !!n.val&&ch.scene===n.val;
     case 'samescene': {const c2=as[n.role2];return !!c2&&ch.scene===c2.scene;}
     case 'linkedscene': {const c2=as[n.role2];return !!c2&&scenesLinked(ch.scene,c2.scene);}
@@ -825,6 +835,23 @@ function applyFx(list,as,actor,sim,entry){
   for(const f0 of list){
     /* las referencias a elementos del evento («@Objeto1») se cambian por lo que se eligió */
     const f=((f0.ref&&f0.ref.charAt(0)==='@')||(f0.ref2&&f0.ref2.charAt(0)==='@'))?Object.assign({},f0,{ref:rr(f0.ref),ref2:rr(f0.ref2)}):f0;
+    if(f.tgt&&GROUP_FX.includes(f.k)){
+      /* a todo un equipo: el mismo efecto para cada integrante vivo */
+      const teams=[];
+      if(f.tgt==='team'){[f.role].concat(f.more||[]).forEach(r=>{const c=as[r],tm=c?teamOfIn(sim,c):null;if(tm&&!teams.includes(tm))teams.push(tm);});}
+      else{const tm=sim.teams.find(x=>x.id===rr(f.tgt));if(tm)teams.push(tm);}
+      const ms=[];teams.forEach(tm=>teamMatesIn(sim,tm).forEach(c=>{if(c.alive&&!ms.includes(c))ms.push(c);}));
+      if(ms.length){
+        ms.forEach((c,i)=>{
+          const a2=Object.assign({},as,{['$g'+i]:c});
+          Object.defineProperty(a2,'vs',{value:as.vs||{},enumerable:false});
+          applyFx([Object.assign({},f,{tgt:'',role:'$g'+i,more:[]})],a2,actor,sim,entry);
+        });
+        continue;
+      }
+      if(f.tgt!=='team'){entry.notes.push('No había un equipo al que aplicar el efecto.');continue;}
+      /* sin equipo: se aplica solo al participante */
+    }
     if(f.more&&f.more.length&&MULTI_FX.includes(f.k)){
       /* el mismo efecto para cada participante de la lista */
       [f.role].concat(f.more).forEach(r=>applyFx([Object.assign({},f,{role:r,more:[]})],as,actor,sim,entry));
@@ -848,6 +875,10 @@ function applyFx(list,as,actor,sim,entry){
       if(f.ref&&P.emotions.some(m=>m.id===f.ref)){t.emotion=f.ref;t.emoDay=sim.day;}
     } else if(f.k==='emotionClear'){
       t.emotion='';
+    } else if(f.k==='slots'){
+      const want=Math.max(0,Math.floor(f.mode==='set'?f.num:t.slots+f.num));
+      t.slots=want;
+      if(usedSlots(t)>want) entry.notes.push(t.name+' lleva más de lo que le cabe ('+usedSlots(t)+'/'+want+').');
     } else if(f.k==='loyalty'){
       t.loy=Math.min(100,Math.max(0,f.mode==='set'?f.num:t.loy+f.num));
     } else if(f.k==='teamForm'){
@@ -989,17 +1020,20 @@ function chaosShake(sim,level){
 /* Probabilidad (0 a 1) según un modo de probabilidad (el de «sale bien» o el de un desenlace extra). */
 function chanceOf(c,e,as){
   if(!c||c.mode==='always') return 1;
-  const A=as[e.roles[0].n],B=e.roles[1]?as[e.roles[1].n]:null;
+  const A=as[c.a]||as[e.roles[0].n];
+  /* «contra»: otro participante (por defecto el segundo) o un valor fijo que elige el usuario */
+  const fixed=c.vs==='fixed',val=Math.max(0,isFinite(parseFloat(c.val))?parseFloat(c.val):5);
+  const B=fixed?null:(as[c.b]||(e.roles[1]?as[e.roles[1].n]:null));
   switch(c.mode){
     case 'fixed': return Math.min(1,Math.max(0,c.pct/100));
     case 'stat': {
-      if(!B||!c.stat) return 0.5;
-      const a=Math.max(0,statVal(A,c.stat)),b=Math.max(0,statVal(B,c.stat));
+      if((!B&&!fixed)||!c.stat) return 0.5;
+      const a=Math.max(0,statVal(A,c.stat)),b=fixed?val:Math.max(0,statVal(B,c.stat));
       return a+b>0?a/(a+b):0.5;
     }
     case 'team': {
-      if(!B) return 0.5;
-      const a=Math.max(1,teamSizeOf(A)),b=Math.max(1,teamSizeOf(B));   // sin equipo cuenta como uno solo
+      if(!B&&!fixed) return 0.5;
+      const a=Math.max(1,teamSizeOf(A)),b=fixed?Math.max(1,val):Math.max(1,teamSizeOf(B));   // sin equipo cuenta como uno solo
       return a/(a+b);
     }
     case 'loyalty': return Math.min(1,Math.max(0,1-A.loy/100));
@@ -1012,10 +1046,10 @@ function chanceOf(c,e,as){
         let v=st.num;
         if(st.op==='add'){
           if(st.kind==='stat') v=st.num*(r1&&st.stat?statVal(r1,st.stat):0);
-          else if(st.kind==='statdiff') v=st.num*((r1&&st.stat?statVal(r1,st.stat):0)-(r2&&st.stat?statVal(r2,st.stat):0));
+          else if(st.kind==='statdiff') v=st.num*((r1&&st.stat?statVal(r1,st.stat):0)-(st.vs==='fixed'?st.val:(r2&&st.stat?statVal(r2,st.stat):0)));
           else if(st.kind==='loyalty') v=st.num*(r1?r1.loy:0);
           else if(st.kind==='teamsize') v=st.num*(r1?teamSizeOf(r1):0);
-          else if(st.kind==='teamdiff') v=st.num*((r1?teamSizeOf(r1):0)-(r2?teamSizeOf(r2):0));
+          else if(st.kind==='teamdiff') v=st.num*((r1?teamSizeOf(r1):0)-(st.vs==='fixed'?st.val:(r2?teamSizeOf(r2):0)));
           p+=v;
         } else if(st.op==='mult') p*=v;
         else p=v;
@@ -1079,22 +1113,36 @@ function tickStates(sim,entries){
 }
 
 /* Dónde ocurre un evento: los escenarios de sus participantes (antes de los efectos) y los elegidos como {Escenario1}. */
-function eventScenes(e,as){
+/* Qué elementos del evento ({Objeto1}…) intervienen en el desenlace que ocurrió: los que nombra su texto, los que usan sus efectos
+   y los que piden las condiciones. Un elemento pensado para otro desenlace no cuenta. */
+function usedVars(e,text,fxList){
+  const used=new Set();
+  [...String(text||'').matchAll(TOKEN_RE)].forEach(m=>{if(!ROLE_RE.test(m[1]))used.add(m[1]);});
+  const at=r=>{if(r&&r.charAt(0)==='@')used.add(r.slice(1));};
+  (fxList||[]).forEach(f=>{at(f.ref);at(f.ref2);at(f.tgt);});
+  const walk=(n,neg)=>{
+    if(n.t==='g'){n.c.forEach(c=>walk(c,neg||n.op==='not'));return;}
+    if(!n.neg&&!neg) at(n.val);
+  };
+  walk(e.cond,false);
+  return used;
+}
+function eventScenes(e,as,used){
   const out=[],at=id=>{let g=out.find(x=>x.id===id);if(!g){g={id,who:[]};out.push(g);}return g;};
   if(!P.scenes.length) return out;
   e.roles.forEach(r=>{const c=as[r.n];if(c&&sceneDef(c.scene))at(c.scene).who.push(c.id);});
   const vs=as.vs||{};
-  Object.keys(vs).forEach(n=>{if(vs[n].kind==='scene'&&!out.some(g=>g.id===vs[n].id))at(vs[n].id).dest=true;});
+  Object.keys(vs).forEach(n=>{if(vs[n].kind==='scene'&&(!used||used.has(n))&&!out.some(g=>g.id===vs[n].id))at(vs[n].id).dest=true;});
   return out;
 }
 /* Objetos, habilidades y estados que aparecen en un evento: los elegidos como elementos, los de los efectos y los de las condiciones. */
-function eventElems(e,as,fxList){
+function eventElems(e,as,fxList,used){
   const out=[],add=(kind,id)=>{
     const L={item:P.items,skill:P.skills,state:P.states}[kind];
     if(id&&L&&L.some(x=>x.id===id)&&!out.some(x=>x.kind===kind&&x.id===id)) out.push({kind,id});
   };
   const vs=as.vs||{};
-  Object.keys(vs).forEach(n=>add(vs[n].kind,vs[n].id));
+  Object.keys(vs).forEach(n=>{if(!used||used.has(n))add(vs[n].kind,vs[n].id);});
   const rr=r=>(r&&r.charAt(0)==='@')?((vs[r.slice(1)]||{}).id||''):r;
   const FK={giveItem:'item',removeItem:'item',teamTake:'item',moveItem:'item',swapItems:'item',giveSkill:'skill',removeSkill:'skill',useSkill:'skill',addState:'state',removeState:'state'};
   (fxList||[]).forEach(f=>{const k=FK[f.k];if(k){add(k,rr(f.ref));if(f.k==='swapItems')add(k,rr(f.ref2));}});
@@ -1152,14 +1200,15 @@ function playDay(sim,opts){
     const oc=pickOutcome(e,as);
     const text=oc.out?(oc.out.text.trim()||e.text):((oc.fail&&e.failText.trim())?e.failText:e.text);
     const groups=buildGroups(e,as,sim);
+    const usedFx=oc.out?oc.out.fx:(oc.fail?e.fxFail:e.fx),usedNow=usedVars(e,text,usedFx);
     const entry={
       html:fmt(text,as),
       who:Object.keys(as).map(k=>({c:as[k],src:lookFor(as[k],roleLook(e,k))})),
       groups,deaths:[],notes:[],
       chance:(!(e.outs&&e.outs.length)&&e.chance&&e.chance.mode!=='always')?Math.round(successChance(e,as)*100):null,
       outcome:(e.outs&&e.outs.length)?{name:oc.out?(oc.out.name.trim()||'Desenlace extra'):(oc.fail?'No sale bien':'Sale bien'),pct:oc.pct}:null,
-      scenes:eventScenes(e,as),
-      elems:eventElems(e,as,oc.out?oc.out.fx:(oc.fail?e.fxFail:e.fx))
+      scenes:eventScenes(e,as,usedNow),
+      elems:eventElems(e,as,usedFx,usedNow)
     };
     markSkillRules(e,as,sim);
     applyFx(oc.out?oc.out.fx:(oc.fail?e.fxFail:e.fx),as,actor,sim,entry);

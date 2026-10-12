@@ -18,7 +18,7 @@ ui.evView=(()=>{try{return localStorage.getItem('br.evView')==='form'?'form':'bl
 const RULE_CAT={
   gender:'char',status:'char',is:'char',
   state:'state',anystate:'state',
-  item:'item',space:'item',teamitem:'item',
+  item:'item',space:'item',teamitem:'item',slotsize:'item',
   skill:'skill',skillready:'skill',
   scene:'scene',samescene:'scene',linkedscene:'scene',scenecount:'scene',sceneexit:'scene',linkedto:'scene',inteamof:'team',
   hasstat:'stat',stat:'stat',statvs:'stat',
@@ -28,7 +28,7 @@ const RULE_CAT={
 const FX_CAT={
   kill:'kill',
   giveItem:'item',removeItem:'item',teamTake:'item',
-  giveSkill:'skill',removeSkill:'skill',useSkill:'skill',
+  slots:'item',giveSkill:'skill',removeSkill:'skill',useSkill:'skill',
   joinTeam:'team',moveScene:'scene',moveSceneRandom:'scene',moveSceneLinked:'scene',moveSceneWith:'scene',
   stat:'stat',
   emotion:'emo',emotionClear:'emo',
@@ -72,7 +72,6 @@ function blkNode(e,n,path,depth,par,idx){
     const kids=n.c.length?n.c.map((ch,i)=>blkNode(e,ch,cpath(path,i),depth+1,n,i)).join(''):`<p class="dz-empty">Sin reglas: siempre se cumple. Agregá un bloque o arrastrá uno acá.</p>`;
     return `<div class="blk grp-blk ${root?'root':''}" data-kind="c" data-path="${path}" data-g="${n.op}">
       <div class="bh">${root?'':HDL}${jn}${opSegHTML(path,n)}${blkPickerHTML(`data-zone="c" data-path="${path}"`)}${root?'':`<span class="ba">${condActs(path)}</span>`}</div>
-      <p class="hint">${EXPL[n.op]}</p>
       <div class="dz" data-zone="c" data-path="${path}">${kids}</div></div>`;
   }
   return `<div class="blk k-${RULE_CAT[n.kind]||'char'}" data-kind="c" data-path="${path}">${HDL}<div class="bc">${jn}${ruleControls(e,n,path)}</div><div class="ba">${condActs(path)}</div></div>`;
@@ -84,20 +83,10 @@ function fxZoneHTML(e,L){
 }
 function viewToggleHTML(){
   const b=ui.evView==='blocks';
-  return `<div class="vtog"><div class="seg" role="group" aria-label="Vista del editor"><button type="button" class="${b?'on':''}" data-act="ev-view" data-v="blocks">Bloques</button><button type="button" class="${b?'':'on'}" data-act="ev-view" data-v="form">Formulario</button></div><span class="hint">Las dos vistas editan lo mismo.</span></div>`;
+  return `<div class="vtog"><div class="seg" role="group" aria-label="Vista del editor"><button type="button" class="${b?'on':''}" data-act="ev-view" data-v="blocks">Bloques</button><button type="button" class="${b?'':'on'}" data-act="ev-view" data-v="form">Formulario</button></div>${helpBtn('view')}</div>`;
 }
-function programHTML(e){
-  const legend=['char','item','skill','stat','emo','state','team','scene','kill'].map(c=>`<span class="lg k-${c}">${CAT_LBL[c]}</span>`).join('');
-  return `<section class="card sec prog"><h3 class="h3">Programa del evento</h3>
-  <p class="hint">Armalo con bloques. El evento solo puede ocurrir si se cumplen las condiciones, y entonces pasan los efectos. Para mover un bloque, arrastralo desde ⠿ (también con el dedo) o usá ▲ ▼. Un grupo puede contener reglas y otros grupos. Una stat que el personaje no tiene vale 0.</p>
-  <div class="legend">${legend}</div>
-  <div class="pk"><b>SI</b> se cumple</div>
-  ${blkNode(e,e.cond,'',0)}
-  <div class="pk"><b>ENTONCES</b> pasa</div>
-  ${fxZoneHTML(e,'fx')}
-  <p class="hint">Si un objeto no entra en los slots, el personaje no tiene la stat o no hay equipo para el efecto, ese efecto no se aplica y queda una nota en el registro.</p></section>
-  ${resultSection(e,true)}`;
-}
+/* Leyenda de colores de los bloques. */
+const legendHTML=()=>`<div class="legend">${['char','item','skill','stat','emo','state','team','scene','kill'].map(c=>`<span class="lg k-${c}">${CAT_LBL[c]}</span>`).join('')}</div>`;
 
 /* ---------- Cambios sobre los datos ---------- */
 const hasNode=(g,x)=>g===x||(g.t==='g'&&g.c.some(ch=>hasNode(ch,x)));

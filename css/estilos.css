@@ -371,3 +371,41 @@ small .uic{width:13px;height:13px;vertical-align:-2px}
 .elt b{font:600 13px var(--font-body)}
 .elt small{font:500 10.5px var(--font-mono);letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
 @media (max-width:560px){.en{grid-template-columns:minmax(0,1fr)}.av.md{width:56px;height:56px}}
+
+/* ---------- Etapa 9: editor de eventos rediseñado ---------- */
+.sh{display:flex;align-items:center;gap:8px}
+.sh .h3,.sh label.h3{margin:0}
+.sh.sub{margin-top:4px}
+.sh.sub b{font:600 12px var(--font-mono);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2)}
+.q{flex:none;width:22px;height:22px;border-radius:50%;border:1px solid var(--ink-2);background:var(--surface);color:var(--ink-2);font:700 12px var(--font-mono);line-height:1;padding:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.q:hover,.q:focus-visible{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.pop{position:fixed;inset:0;z-index:1000;background:rgba(10,14,20,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+.pop-b{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:10px;max-width:480px;width:100%;max-height:85vh;overflow:auto;padding:16px 18px;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.pop-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.pop-h h3{margin:0;flex:1;font:700 18px var(--font-display);letter-spacing:.03em;text-transform:uppercase}
+.pop-c{display:grid;gap:8px;font-size:14px;line-height:1.5}
+.pop-c p,.pop-c ol{margin:0}
+.pop-c ol{padding-left:20px;display:grid;gap:4px}
+.etabbar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;margin:4px 0 12px}
+.etabs{display:flex;gap:4px;flex-wrap:wrap}
+.etabs button{padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink-2);font:600 13px var(--font-body);cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.etabs button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.etabs .cn{font:600 11px var(--font-mono);padding:1px 6px;border-radius:10px;background:var(--surface-2);color:var(--ink-2)}
+.etabs button.on .cn{background:var(--bg);color:var(--ink)}
+.etab{display:grid;gap:14px;margin-bottom:14px}
+.evhead textarea{width:100%}
+.evhead .lb{font:700 18px var(--font-display);letter-spacing:.03em;text-transform:uppercase}
+details.note>summary{cursor:pointer}
+.vtog{margin:0}
+.dist{display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.dist span{display:flex;align-items:center;justify-content:center;font:600 11px var(--font-mono);color:#fff;overflow:hidden;white-space:nowrap;min-width:2px}
+.dist-l{display:flex;flex-wrap:wrap;gap:4px 14px;list-style:none;margin:6px 0 0;padding:0;font-size:12px;color:var(--ink-2)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.seg-main{background:var(--ok)}
+.seg-fail{background:var(--accent)}
+.seg-x0{background:#3b6fb6}.seg-x1{background:#8a5cc2}.seg-x2{background:#b0802a}.seg-x3{background:#2a8f9c}
+.outc-h .ot{font-size:14px}
+.outc-h .fold{font-size:14px}
+.outc-b{display:grid;gap:10px;grid-template-columns:minmax(0,1fr)}
+.outc{grid-template-columns:minmax(0,1fr)}
+.dist-n{margin:6px 0 0}

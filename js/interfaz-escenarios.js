@@ -72,8 +72,7 @@ function sceneSection(e){
     }).join('')+`<div><button type="button" class="btn sm" data-act="ss-group-add">Agregar otro grupo</button></div>`;
   }
   const hint=mode==='free'?'Cada participante puede estar en cualquier escenario.':mode==='all'?'El evento solo ocurre si todos los participantes están en el mismo escenario.':'Dentro de cada grupo todos tienen que estar en el mismo escenario; los grupos (y los participantes que no están en ninguno) pueden estar en escenarios distintos.';
-  return `<section class="card sec"><h3 class="h3">Escenarios</h3>
-  <p class="hint">Elegí dónde tienen que estar los participantes. Podés exigir que coincidan todos, solo algunos (por ejemplo X con Z, mientras Y está en otro lado) o ninguno. También hay reglas y efectos de escenarios para casos más finos.</p>
+  return `<section class="card sec"><div class="sh"><h3 class="h3">Escenarios</h3>${helpBtn('escenarios')}</div>
   ${P.scenes.length?'':'<div class="note warn"><b>Todavía no hay escenarios</b><p class="hint">Creálos en la pestaña Escenarios para que esto tenga efecto.</p></div>'}
   <div><label for="ss-mode">Quiénes comparten escenario</label><select id="ss-mode" data-bind="ss-mode" ${names.length<2?'disabled':''}>${o('free','Nadie en particular (sin restricción)')}${o('all','Todos los participantes')}${o('groups','Solo algunos (grupos)')}</select></div>
   <p class="hint">${esc(names.length<2?'Con un solo participante no hay nada que compartir. Agregá otro arriba.':hint)}</p>${body}</section>`;
