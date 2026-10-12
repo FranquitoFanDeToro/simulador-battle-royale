@@ -67,7 +67,7 @@ function membersListHTML(t){
   if(!L.length) return '<p class="hint">Ningún personaje coincide con la búsqueda.</p>';
   return `<div class="pick">${L.map(c=>{
     const other=P.teams.find(o=>o!==t&&o.members.includes(c.id));
-    return `<label><input type="checkbox" data-bind="team-member" data-id="${c.id}" ${t.members.includes(c.id)?'checked':''}>${esc(nm(c))}${other?` <small>en «${esc(other.name||'Sin nombre')}»</small>`:''}${c.enabled?'':' <small>deshabilitado</small>'}</label>`;
+    return `<label><input type="checkbox" data-bind="team-member" data-id="${c.id}" ${t.members.includes(c.id)?'checked':''}>${esc(nm(c))}${other?` <small>en «${esc(other.name||'Sin nombre')}»</small>`:''}${charOn(c)?'':' <small>deshabilitado</small>'}</label>`;
   }).join('')}</div>`;
 }
 function refreshMembers(){

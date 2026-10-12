@@ -336,6 +336,9 @@ function normSameScene(v,roles){
   });
   return out;
 }
+/* Sección de un personaje, y si participa: tiene que estar habilitado él y su sección. */
+const secOf=c=>(P.sections||[]).find(x=>x.id===c.sec)||null;
+const charOn=c=>c.enabled&&(!secOf(c)||secOf(c).enabled);
 function normalize(p){
   if(!p||typeof p!=='object') return null;
   const arr=a=>Array.isArray(a)?a:[];
@@ -380,7 +383,7 @@ function normalize(p){
       steps:arr(ch.steps).filter(x=>x&&typeof x==='object').map(normStep)
     };
   };
-  const o={v:7,stats:[],items:[],skills:[],emotions:[],states:[],scenes:[],sceneStart:'',chars:[],teams:[],words:{nouns:[],adjs:[]},teamPresets:[],events:[],fallback:'{X} pasó el día sin novedades.'};
+  const o={v:7,stats:[],items:[],skills:[],emotions:[],states:[],scenes:[],sceneStart:'',sections:[],chars:[],teams:[],words:{nouns:[],adjs:[]},teamPresets:[],events:[],fallback:'{X} pasó el día sin novedades.'};
   const lim=v=>(v===null||v===undefined||v===''||!isFinite(parseFloat(v)))?null:parseFloat(v);
   const normImg=m=>(m&&m.id&&['file','url','data'].includes(m.kind)&&(m.kind==='file'||safeUrl(m.src)))?{id:String(m.id),kind:m.kind,src:m.kind==='file'?'':String(m.src),tag:''}:null;
   o.stats=arr(p.stats).filter(i=>i&&i.id).map(i=>{
@@ -406,6 +409,10 @@ function normalize(p){
   o.scenes.forEach(a=>{a.links=a.links.filter(id=>id!==a.id&&sceneIds.has(id));});
   o.scenes.forEach(a=>a.links.forEach(id=>{const b=o.scenes.find(x=>x.id===id);if(b&&!b.links.includes(a.id))b.links.push(a.id);}));
   o.sceneStart=sceneIds.has(String(p.sceneStart||''))?String(p.sceneStart):'';
+  /* secciones de personajes: nombre, plegada o no, habilitada o no */
+  const secSeen=new Set();
+  o.sections=arr(p.sections).filter(x=>x&&x.id&&!secSeen.has(String(x.id))&&secSeen.add(String(x.id))).map(x=>({id:String(x.id),name:String(x.name||'').slice(0,80),closed:!!x.closed,enabled:x.enabled!==false}));
+  const secIds=new Set(o.sections.map(x=>x.id));
   o.chars=arr(p.chars).filter(c=>c&&c.id).map(c=>{
     let imgs=arr(c.imgs).filter(i=>i&&i.id&&['file','url','data'].includes(i.kind)&&(i.kind==='file'||safeUrl(i.src)))
       .map(i=>({id:String(i.id),kind:i.kind,src:i.kind==='file'?'':String(i.src),tag:String(i.tag||'')}));
@@ -421,7 +428,7 @@ function normalize(p){
       });
     }
     return {
-      id:String(c.id),name:String(c.name||''),gender:GEN[c.gender]?c.gender:'o',enabled:c.enabled!==false,
+      id:String(c.id),name:String(c.name||''),gender:GEN[c.gender]?c.gender:'o',enabled:c.enabled!==false,sec:secIds.has(String(c.sec||''))?String(c.sec):'',
       slots:Math.max(0,Math.floor(num(c.slots,DEFAULT_SLOTS))),imgs,
       items:arr(c.items).map(String),skills:arr(c.skills).map(String),stats,
       loy:Math.min(100,Math.max(0,num(c.loy,50))),
@@ -644,7 +651,7 @@ function newSim(){
   const okIds=(list,ids)=>ids.filter(id=>list.some(i=>i.id===id));
   const sim={
     day:0,over:false,capped:false,days:[],teams:[],teamSeq:0,
-    chars:P.chars.filter(c=>c.enabled).map(c=>{
+    chars:P.chars.filter(charOn).map(c=>{
       const stats={};
       Object.keys(c.stats).forEach(id=>{if(P.stats.some(s=>s.id===id))stats[id]=c.stats[id];});
       return {

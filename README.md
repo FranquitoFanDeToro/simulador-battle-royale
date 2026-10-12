@@ -127,3 +127,14 @@ Todavía no existen: los escenarios y «dividirse para buscar recursos».
 - Efectos aplicables a **todo un equipo** (lealtad, stats, habilidades, objetos, emoción, estados, eliminar…).
 - El registro de la simulación muestra solo los elementos que **intervinieron** en el desenlace que ocurrió.
 - Efecto **«Cambia el espacio del inventario»** (suma o fija) y regla «tiene un inventario de tamaño».
+
+## Etapa 10: secciones de personajes
+
+En la pestaña **Personajes** podés crear secciones para ordenar la lista («Nueva sección»).
+- Cada personaje está en una sola sección, o en «Sin sección». Se cambia arrastrando, desde la ficha (campo «Sección») o con la selección múltiple («Mover a la sección»).
+- **Arrastrar**: tomá el asa ⠿ de un personaje o de una sección (también con el dedo). Podés soltar un personaje antes o después de otro, en una sección vacía o sobre el encabezado de una sección plegada. Con el orden A→Z o una letra elegida, el arrastre solo cambia de sección. Las secciones también se mueven con ▲ ▼.
+- **Deshabilitar**: el checkbox del encabezado deshabilita la sección entera sin tocar lo que cada personaje tenía; al volver a habilitarla, cada uno queda como estaba. Cada personaje también tiene su checkbox en la tarjeta. Un personaje participa solo si él y su sección están habilitados.
+- **Plegar**: ▾/▸ en cada sección, más «Plegar todas» / «Desplegar todas». El estado queda guardado.
+- «＋ Personaje» crea un personaje directamente en esa sección, «Seleccionar» (en selección múltiple) marca toda la sección, y al eliminar una sección sus personajes pasan a «Sin sección».
+- Con búsqueda o filtros, solo se muestran las secciones con resultados.
+- Las secciones se guardan en el proyecto y en la exportación/importación.

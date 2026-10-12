@@ -233,7 +233,7 @@ function charsFiltered(){
   const q=norm(ui.q.chars);
   const f=ui.cf;
   const inTeam=(c,id)=>{const t=P.teams.find(x=>x.id===id);return !!t&&t.members.includes(c.id);};
-  const L=P.chars.filter(c=>(!q||norm(c.name).includes(q))&&(!ui.fgender||c.gender===ui.fgender)&&(!ui.fstate||(ui.fstate==='on'?c.enabled:!c.enabled))
+  const L=P.chars.filter(c=>(!q||norm(c.name).includes(q))&&(!ui.fgender||c.gender===ui.fgender)&&(!ui.fstate||(ui.fstate==='on'?charOn(c):!charOn(c)))
     &&(!f.item||c.items.includes(f.item))&&(!f.skill||c.skills.includes(f.skill))&&(!f.state||c.states.includes(f.state))
     &&(!f.stat||(f.op==='has'?hasStat(c,f.stat):(f.op==='hasnt'?!hasStat(c,f.stat):cmp(statVal(c,f.stat),f.op,f.num))))
     &&(!f.team||(f.team==='none'?!P.teams.some(t=>t.members.includes(c.id)):inTeam(c,f.team))));
@@ -256,14 +256,16 @@ function charCard(c){
   const bits=[GEN[c.gender]];
   if(c.items.length)bits.push(plural(c.items.length,'objeto','objetos'));
   if(c.skills.length)bits.push(plural(c.skills.length,'habilidad','habilidades'));
-  const on=ui.sel.has(c.id);
-  return `<button type="button" class="ccard ${c.enabled?'':'off'} ${ui.selMode&&on?'sel':''}" data-act="${ui.selMode?'char-pick':'char-edit'}" data-id="${c.id}">${av(c,'lg')}<div><b>${esc(nm(c))}</b><br><small>${esc(bits.join(' · '))}</small>${c.enabled?'':'<br><span class="chip">Deshabilitado</span>'}</div>${ui.selMode?`<span class="tick">${on?'✓':''}</span>`:''}</button>`;
+  const on=ui.sel.has(c.id),act=charOn(c);
+  const why=c.enabled?'Sección deshabilitada':'Deshabilitado';
+  return `<div class="cwrap" data-cid="${c.id}"><button type="button" class="ccard ${act?'':'off'} ${ui.selMode&&on?'sel':''}" data-act="${ui.selMode?'char-pick':'char-edit'}" data-id="${c.id}">${av(c,'lg')}<div><b>${esc(nm(c))}</b><br><small>${esc(bits.join(' · '))}</small>${act?'':`<br><span class="chip">${why}</span>`}</div>${ui.selMode?`<span class="tick">${on?'✓':''}</span>`:''}</button>
+  <span class="ctools"><input type="checkbox" class="ctog" data-bind="char-on" data-id="${c.id}" ${c.enabled?'checked':''} aria-label="Participa: ${esc(nm(c))}" title="Participa en la simulación"><button type="button" class="chd" data-drag="char" data-id="${c.id}" aria-label="Mover ${esc(nm(c))}" title="Arrastrar para mover">⠿</button></span></div>`;
 }
 function charsListHTML(){
   if(!P.chars.length) return '<p class="empty">Todavía no hay personajes. Creá el primero o pegá una lista de nombres.</p>';
   const L=charsFiltered();
   if(!L.length) return '<p class="empty">Ningún personaje coincide con el filtro.</p>';
-  return `<div class="grid">${L.map(charCard).join('')}</div>`;
+  return secListHTML(L);
 }
 function optList(list,emptyLabel){
   return (emptyLabel?`<option value="">${emptyLabel}</option>`:'')+list.map(i=>`<option value="${i.id}">${esc(lbl(i))}</option>`).join('');
@@ -272,6 +274,7 @@ function selBar(){
   if(!ui.selMode) return '';
   return `<div class="card selbar"><div class="acts"><b id="selcount">${plural(ui.sel.size,'seleccionado','seleccionados')}</b>
   <button type="button" class="btn sm" data-act="sel-all">Todos los mostrados</button><button type="button" class="btn sm" data-act="sel-none">Ninguno</button></div>
+  ${P.sections.length?`<div class="acts"><select id="sel-sec" aria-label="Sección">${secOptsHTML('')}</select><button type="button" class="btn sm" data-act="sel-move">Mover a la sección</button></div>`:''}
   <div class="acts"><button type="button" class="btn sm" data-act="sel-enable">Habilitar</button><button type="button" class="btn sm" data-act="sel-disable">Deshabilitar</button></div>
   <div class="acts"><select id="sel-item" aria-label="Objeto">${optList(P.items,'Objeto…')}</select><button type="button" class="btn sm" data-act="sel-giveitem">Dar objeto</button></div>
   <div class="acts"><select id="sel-skill" aria-label="Habilidad">${optList(P.skills,'Habilidad…')}</select><button type="button" class="btn sm" data-act="sel-giveskill">Dar habilidad</button></div>
@@ -284,6 +287,7 @@ function vChars(){
   return `<div class="bar"><h2 class="h2">Personajes</h2><div class="acts">
   <button type="button" class="btn pri" data-act="char-new">Nuevo personaje</button>
   <button type="button" class="btn" data-act="bulk-toggle">Agregar varios</button>
+  <button type="button" class="btn" data-act="sec-new">Nueva sección</button>
   <button type="button" class="btn ${ui.selMode?'on':''}" data-act="sel-toggle">Selección múltiple</button></div></div>
   ${ui.bulk?'<div class="card bulk"><div><label for="bulk-text">Un nombre por línea</label><textarea id="bulk-text" rows="5" placeholder="Ana\nLuis\nCarla"></textarea></div><div class="acts"><button type="button" class="btn pri" data-act="bulk-add">Crear personajes</button></div></div>':''}
   <div class="fbar"><input type="search" placeholder="Buscar por nombre…" value="${esc(ui.q.chars)}" data-bind="q" data-k="chars" aria-label="Buscar personajes">
@@ -291,7 +295,7 @@ function vChars(){
   <select data-bind="f-state" aria-label="Estado"><option value="">Habilitados y no</option><option value="on" ${ui.fstate==='on'?'selected':''}>Habilitados</option><option value="off" ${ui.fstate==='off'?'selected':''}>Deshabilitados</option></select>
   ${sortBarHTML('chars')}<span class="hint" id="count">${countText('chars')}</span></div>
   ${cfHTML()}
-  ${selBar()}<div id="list">${charsListHTML()}</div>`;
+  ${secToolsHTML()}${selBar()}<div id="list">${charsListHTML()}</div>`;
 }
 
 function meterText(c){const u=usedSlots(c);return u+' de '+c.slots+' slots ocupados'+(u>c.slots?'. Se pasa del límite: quitá objetos':'');}
@@ -345,8 +349,9 @@ function vCharForm(c){
   return `<div class="bar"><button type="button" class="btn" data-act="char-back">← Personajes</button><button type="button" class="btn dng" data-act="char-del" data-confirm="¿Eliminar? Tocá otra vez">Eliminar personaje</button></div>
   <section class="card sec"><h3 class="h3">Ficha</h3>
   <div class="two">${av(c,'lg')}<div style="flex:1 1 200px"><label for="c-name">Nombre</label><input type="text" id="c-name" value="${esc(c.name)}" data-bind="char-name" autocomplete="off"></div></div>
+  <div class="two"><div><label for="c-sec">Sección</label><select id="c-sec" data-bind="char-sec">${secOptsHTML(c.sec)}</select></div></div>
   <div class="two"><div><label for="c-gender">Sexo</label><select id="c-gender" data-bind="char-gender">${Object.keys(GEN).map(k=>`<option value="${k}" ${c.gender===k?'selected':''}>${GEN[k]}</option>`).join('')}</select></div>
-  <label class="pick" style="display:inline-flex;margin:0"><span style="display:inline-flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;font:500 14px var(--font-body);color:var(--ink);background:var(--surface-2);border-radius:6px;padding:6px 10px"><input type="checkbox" data-bind="char-enabled" ${c.enabled?'checked':''}>Participa en la simulación</span></label></div>
+  <label class="pick" style="display:inline-flex;margin:0"><span style="display:inline-flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;font:500 14px var(--font-body);color:var(--ink);background:var(--surface-2);border-radius:6px;padding:6px 10px"><input type="checkbox" data-bind="char-enabled" ${c.enabled?'checked':''}>Participa en la simulación</span></label>${secOf(c)&&!secOf(c).enabled?'<span class="hint">Su sección está deshabilitada.</span>':''}</div>
   <div class="two"><div><label for="c-loy">Lealtad (0 a 100)</label><input type="number" id="c-loy" min="0" max="100" value="${c.loy}" data-bind="char-loy"></div>
   <div><label for="c-emotion">Emoción inicial</label><select id="c-emotion" data-bind="char-emotion"><option value="">Ninguna</option>${P.emotions.map(m=>`<option value="${m.id}" ${c.emotion===m.id?'selected':''}>${esc((m.icon?m.icon+' ':'')+(m.name||'Sin nombre'))}</option>`).join('')}</select></div></div>
   <p class="hint">La lealtad pesa en las traiciones: con poca lealtad, un personaje es más propenso a abandonar o traicionar a su equipo (si los eventos lo usan). El equipo se arma en la pestaña Equipos.</p></section>
@@ -688,7 +693,7 @@ function optsHTML(en,dis){
   <p class="hint">Cada día reordena al azar stats, objetos, habilidades, lealtad y emociones de los vivos, y algunos personajes viven eventos sin cumplir sus condiciones. Más intensidad, más locura.</p></div></details>`;
 }
 function vSim(){
-  const en=P.chars.filter(c=>c.enabled).length,dis=P.chars.length-en;
+  const en=P.chars.filter(charOn).length,dis=P.chars.length-en;
   if(en<2) return `<div class="note warn"><b>Hacen falta al menos 2 personajes habilitados.</b> Hay ${en} de ${P.chars.length}. Creá o habilitá personajes en la pestaña Personajes.</div>`+optsHTML(en,dis);
   const s=ensureSim(),alive=s.chars.filter(c=>c.alive);
   const noKill=!P.events.some(e=>allFx(e).some(killsFx));
@@ -792,7 +797,7 @@ function defaultVal(kind){
 }
 
 /* ======================= ACCIONES (botones) ======================= */
-const blankChar=name=>({id:uid(),name,gender:'o',enabled:true,slots:DEFAULT_SLOTS,imgs:[],items:[],skills:[],stats:{},loy:50,emotion:'',states:[],scene:''});
+const blankChar=name=>({id:uid(),name,gender:'o',enabled:true,sec:'',slots:DEFAULT_SLOTS,imgs:[],items:[],skills:[],stats:{},loy:50,emotion:'',states:[],scene:''});
 const selChars=()=>P.chars.filter(c=>ui.sel.has(c.id));
 function pickBulk(kind,on,cat){
   const c=curChar();if(!c)return;
@@ -1004,15 +1009,15 @@ const ACT={
   'sim-sel'(b){const id=b.dataset.id;ui.simSel=(!id||ui.simSel===id)?null:id;render();},
   'shuffle-off'(){
     const n=Math.max(0,parseInt(ui.shuffleN,10)||0);
-    shuffle(P.chars.filter(c=>c.enabled)).slice(0,n).forEach(c=>{c.enabled=false;});
+    shuffle(P.chars.filter(charOn)).slice(0,n).forEach(c=>{c.enabled=false;});
     ui.optsOpen=true;structural();
   },
   'shuffle-keep'(){
     const n=Math.max(1,parseInt(ui.shuffleN,10)||1);
-    shuffle(P.chars.filter(c=>c.enabled)).slice(n).forEach(c=>{c.enabled=false;});
+    shuffle(P.chars.filter(charOn)).slice(n).forEach(c=>{c.enabled=false;});
     ui.optsOpen=true;structural();
   },
-  'enable-all'(){P.chars.forEach(c=>{c.enabled=true;});ui.optsOpen=true;structural();},
+  'enable-all'(){P.chars.forEach(c=>{c.enabled=true;});P.sections.forEach(x=>{x.enabled=true;});ui.optsOpen=true;structural();},
   /* datos */
   'data-export'(){exportFile();},
   'data-copy'(){copyProject();},
@@ -1038,6 +1043,7 @@ const BIND={
   'sim-filter'(t){ui.simFilter=t.value;refreshList('roster');},
   'char-name'(t){const c=curChar();if(c){c.name=t.value;touch();}},
   'char-gender'(t){const c=curChar();if(c){c.gender=t.value;touch();}},
+  'char-sec'(t){const c=curChar();if(c){c.sec=t.value;touch();}},
   'char-enabled'(t){const c=curChar();if(c){c.enabled=t.checked;touch();}},
   'char-slots'(t){
     const c=curChar();if(!c)return;

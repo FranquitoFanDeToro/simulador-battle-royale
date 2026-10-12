@@ -409,3 +409,27 @@ details.note>summary{cursor:pointer}
 .outc-b{display:grid;gap:10px;grid-template-columns:minmax(0,1fr)}
 .outc{grid-template-columns:minmax(0,1fr)}
 .dist-n{margin:6px 0 0}
+
+/* ---------- Etapa 10: secciones de personajes ---------- */
+.cwrap{position:relative;min-width:0;display:grid}
+.cwrap .ccard{width:100%;height:100%}
+.ctools{position:absolute;top:6px;right:6px;display:flex;gap:4px;align-items:center}
+.ctog{width:18px;height:18px;margin:0;cursor:pointer}
+.chd,.sgd{width:26px;height:26px;border:0;border-radius:4px;background:var(--surface-2);color:var(--ink-2);font-size:16px;line-height:1;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;padding:0}
+.sgd{width:30px;height:32px;font-size:18px}
+.chd:active,.sgd:active{cursor:grabbing}
+.cdragging{opacity:.35}
+.sg{border:1px solid var(--line);border-radius:10px;background:var(--surface);margin-bottom:14px;overflow:hidden}
+.sg.off .sgb{opacity:.7}
+.sg-h{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px;background:var(--surface-2)}
+.sg-h.sg-hl{outline:3px solid var(--accent);outline-offset:-3px}
+.sg-t{font:700 15px var(--font-display);letter-spacing:.04em;text-transform:uppercase}
+.sg-on{width:20px;height:20px;margin:0;cursor:pointer;flex:none}
+.sg-name{flex:1 1 140px;min-width:0;font-weight:600}
+.sg-h .acts{margin-left:auto;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.sgb{padding:10px;border-top:1px solid var(--line)}
+.sgb .dz-empty{grid-column:1/-1}
+.sgb.dz-on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.grid.dz-on{outline:2px dashed var(--accent);outline-offset:4px}
+.chip.warn{background:var(--warn);color:#fff}
+.sgtools{margin:0 0 10px}
