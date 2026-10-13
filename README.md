@@ -138,3 +138,13 @@ En la pestaña **Personajes** podés crear secciones para ordenar la lista («Nu
 - «＋ Personaje» crea un personaje directamente en esa sección, «Seleccionar» (en selección múltiple) marca toda la sección, y al eliminar una sección sus personajes pasan a «Sin sección».
 - Con búsqueda o filtros, solo se muestran las secciones con resultados.
 - Las secciones se guardan en el proyecto y en la exportación/importación.
+
+## Etapa 11: pestaña de objetos
+
+- **Tarjetas**: los objetos se ven como tarjetas (ícono, tamaño, efectos, categorías y uso). Al tocar una se abre su ficha, con anterior/siguiente.
+- **Secciones y carpetas**: «Nueva sección» crea una sección; dentro de cada una, «＋ Carpeta». Cada objeto está en una sección (o «Sin sección») y, si la sección tiene carpetas, en una de ellas (o «Sin carpeta»). Todo se renombra, se pliega, se mueve con ▲ ▼ y se elimina (los objetos quedan sin sección o sin carpeta).
+- **Arrastrar**: asa ⠿ en cada tarjeta (también con el dedo), sobre una carpeta, una sección o un encabezado plegado. También se puede elegir sección y carpeta en la ficha.
+- **Vistas** (selector «Vista», se recuerda): secciones y carpetas · solo secciones (cada sección muestra todos sus objetos, sin separar por carpeta) · solo carpetas (las que se llaman igual se unen aunque sean de secciones distintas) · todo junto. El arrastre funciona en las dos primeras.
+- **Varias categorías** por objeto (en la ficha, o separadas por coma al agregar rápido). El filtro y los eventos que eligen por categoría aceptan cualquiera de ellas. Los proyectos viejos se convierten solos.
+- **Efectos mientras se lleva en el inventario**: cada objeto puede sumar (o restar) slots y cambiar stats (suma o multiplica). Cuenta para las reglas, las probabilidades, el espacio libre y la ficha del personaje. Si el personaje no tiene la stat, el objeto no se la da. Se combinan con los modificadores de los estados.
+- Filtros: búsqueda, orden/letra, categoría y «solo con efectos».

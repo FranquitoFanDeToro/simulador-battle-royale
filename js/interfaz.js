@@ -46,7 +46,7 @@ const LETTERS=[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
 const initial=s=>{const c=norm(s).trim().charAt(0).toUpperCase();return /[A-Z]/.test(c)?c:'#';};
 
 let ui={
-  tab:'sim',char:null,ev:null,team:null,state:null,bulk:false,selMode:false,sel:new Set(),
+  tab:'sim',char:null,ev:null,team:null,state:null,item:null,bulk:false,selMode:false,sel:new Set(),
   q:{scenes:'',chars:'',items:'',skills:'',stats:'',emotions:'',states:'',events:'',roster:'',teams:'',members:''},
   pq:{items:'',skills:''},sort:{},letter:{},cat:{},cf:{stat:'',op:'>=',num:5,item:'',skill:'',state:'',team:''},fgender:'',fstate:'',evf:'',nameSamples:[],
   simSel:null,simFilter:'all',summary:false,optsOpen:false,shuffleN:10,chaos:false,chaosLvl:5,
@@ -192,7 +192,7 @@ function renderTabs(){
 }
 function render(){
   renderTabs();
-  const f={chars:vChars,teams:vTeams,items:()=>vTags('items'),skills:()=>vTags('skills'),stats:()=>vTags('stats'),emotions:()=>vTags('emotions'),states:vStates,scenes:()=>vTags('scenes'),events:vEvents,sim:vSim,data:vData}[ui.tab];
+  const f={chars:vChars,teams:vTeams,items:vItems,skills:()=>vTags('skills'),stats:()=>vTags('stats'),emotions:()=>vTags('emotions'),states:vStates,scenes:()=>vTags('scenes'),events:vEvents,sim:vSim,data:vData}[ui.tab];
   app.innerHTML=f();
 }
 function countText(k){
@@ -200,6 +200,7 @@ function countText(k){
   if(k==='events') return eventsFiltered().length+' de '+P.events.length;
   if(k==='teams') return teamsFiltered().length+' de '+P.teams.length;
   if(k==='states') return statesFiltered().length+' de '+P.states.length;
+  if(k==='items') return itemsFiltered().length+' de '+P.items.length;
   return tagsFiltered(k).length+' de '+P[k].length;
 }
 /* Vuelve a dibujar solo la lista (así no se pierde el foco del buscador). */
@@ -207,7 +208,7 @@ function refreshList(k){
   if(k==='roster'){const r=$('#rlist');if(r&&S)r.innerHTML=rosterListHTML(S);return;}
   if(k==='members'){refreshMembers();return;}
   const el=$('#list');if(!el)return;
-  const f={chars:charsListHTML,teams:teamsListHTML,items:()=>tagRowsHTML('items'),skills:()=>tagRowsHTML('skills'),stats:()=>tagRowsHTML('stats'),emotions:()=>tagRowsHTML('emotions'),states:statesListHTML,scenes:()=>tagRowsHTML('scenes'),events:eventsListHTML}[k];
+  const f={chars:charsListHTML,teams:teamsListHTML,items:itemsListHTML,skills:()=>tagRowsHTML('skills'),stats:()=>tagRowsHTML('stats'),emotions:()=>tagRowsHTML('emotions'),states:statesListHTML,scenes:()=>tagRowsHTML('scenes'),events:eventsListHTML}[k];
   if(f)el.innerHTML=f();
   const c=$('#count');if(c)c.textContent=countText(k);
   const cc=$('#cfcount');if(cc&&k==='chars')cc.textContent=cfActive()?cfActive()+' activos':'ninguno';
@@ -298,14 +299,14 @@ function vChars(){
   ${secToolsHTML()}${selBar()}<div id="list">${charsListHTML()}</div>`;
 }
 
-function meterText(c){const u=usedSlots(c);return u+' de '+c.slots+' slots ocupados'+(u>c.slots?'. Se pasa del límite: quitá objetos':'');}
-function pickFilter(kind){const q=norm(ui.pq[kind]);return P[kind].filter(i=>!q||norm(i.name).includes(q)||norm(i.cat).includes(q));}
+function meterText(c){const u=usedSlots(c),t=slotsOf(c),x=t-c.slots;return u+' de '+t+' slots ocupados'+(x?` (${c.slots} propios ${x>0?'+':'−'} ${Math.abs(x)} de sus objetos)`:'')+(u>t?'. Se pasa del límite: quitá objetos':'');}
+function pickFilter(kind){const q=norm(ui.pq[kind]);return P[kind].filter(i=>!q||norm(i.name).includes(q)||catList(i).some(c=>norm(c).includes(q)));}
 function pickListHTML(c,kind){
   if(!P[kind].length) return `<p class="hint">Todavía no hay ${kind==='items'?'objetos':'habilidades'}. Creálos en su pestaña.</p>`;
   const list=pickFilter(kind);
   if(!list.length) return '<p class="hint">Nada coincide con la búsqueda.</p>';
   const groups={};
-  list.forEach(i=>{const k=i.cat||'';(groups[k]=groups[k]||[]).push(i);});
+  list.forEach(i=>{const cl=catList(i);(cl.length?cl:['']).forEach(k=>{(groups[k]=groups[k]||[]).push(i);});});
   const keys=Object.keys(groups).sort(),free=slotsFree(c),showHead=keys.length>1||keys[0]!=='';
   return keys.map(cat=>`<div class="pkg">${showHead?`<div class="pkh"><span>${esc(cat||'Sin categoría')}</span><button type="button" class="link" data-act="pick-cat" data-kind="${kind}" data-cat="${esc(cat)}">marcar todo</button></div>`:''}<div class="pick">${groups[cat].map(i=>{
     const has=c[kind].includes(i.id),noRoom=kind==='items'&&!has&&i.size>free;
@@ -321,7 +322,7 @@ function refreshPicker(kind){
   const c=curChar(),el=$('#pk-'+kind);
   if(c&&el)el.innerHTML=pickListHTML(c,kind);
   const m=$('#slot-meter');
-  if(c&&m){m.textContent=meterText(c);m.classList.toggle('bad',usedSlots(c)>c.slots);}
+  if(c&&m){m.textContent=meterText(c);m.classList.toggle('bad',usedSlots(c)>slotsOf(c));}
 }
 function statsSection(c){
   const have=Object.keys(c.stats).filter(id=>P.stats.some(s=>s.id===id));
@@ -639,7 +640,7 @@ function rosterListHTML(s){
   if(!L.length) return '<p class="hint">Sin resultados.</p>';
   return '<ul>'+L.map(c=>{
     const t=teamOfIn(s,c);
-    return `<li><button type="button" class="ro ${c.alive?'':'out'} ${ui.simSel===c.id?'on':''}" data-act="sim-sel" data-id="${c.id}">${av(c)}<div><b>${esc(c.name)}${emoTag(c)}${stIcons(c)}</b><small>${c.kills?plural(c.kills,'baja','bajas')+' · ':''}${usedSlots(c)}/${c.slots} slots${t?' · '+esc(t.name):''}${sceneDef(c.scene)?' · '+esc(sceneName(c.scene)):''}</small></div><span class="st">${c.alive?'VIVO':'BAJA'}</span></button></li>`;
+    return `<li><button type="button" class="ro ${c.alive?'':'out'} ${ui.simSel===c.id?'on':''}" data-act="sim-sel" data-id="${c.id}">${av(c)}<div><b>${esc(c.name)}${emoTag(c)}${stIcons(c)}</b><small>${c.kills?plural(c.kills,'baja','bajas')+' · ':''}${usedSlots(c)}/${slotsOf(c)} slots${t?' · '+esc(t.name):''}${sceneDef(c.scene)?' · '+esc(sceneName(c.scene)):''}</small></div><span class="st">${c.alive?'VIVO':'BAJA'}</span></button></li>`;
   }).join('')+'</ul>';
 }
 function teamsSideHTML(s){
@@ -676,7 +677,7 @@ function simDetail(s){
   <div><dt>Ánimo</dt><dd>Lealtad <b>${Math.round(c.loy)}</b> · ${em?esc((em.icon?em.icon+' ':'')+em.name):'<span class="hint">sin emoción</span>'}</dd></div>
   <div><dt>Estados alterados</dt><dd>${sts.length?sts.map(o=>esc((o.d.icon?o.d.icon+' ':'')+o.d.name)+(o.d.days>0?` <small>(hasta el día ${o.x.day+o.d.days})</small>`:'')).join(' · '):'<span class="hint">Ninguno</span>'}</dd></div>
   <div><dt>Stats</dt><dd>${stats.length?stats.map(x=>x.e!==x.v?`${esc(x.n)} <b>${round2(x.e)}</b> <small>(base ${round2(x.v)})</small>`:`${esc(x.n)} <b>${round2(x.v)}</b>`).join(' · '):'<span class="hint">Ninguna</span>'}</dd></div>
-  <div><dt>Inventario (${usedSlots(c)}/${c.slots})</dt><dd>${items.length?items.join(', '):'<span class="hint">Vacío</span>'}</dd></div>
+  <div><dt>Inventario (${usedSlots(c)}/${slotsOf(c)})</dt><dd>${items.length?items.join(', '):'<span class="hint">Vacío</span>'}</dd></div>
   <div><dt>Habilidades</dt><dd>${skills.length?skills.join(', '):'<span class="hint">Ninguna</span>'}</dd></div>
   <div><dt>Bajas</dt><dd>${c.kills?esc(c.victims.join(', ')):'<span class="hint">Ninguna</span>'}</dd></div>
   ${c.alive?'':`<div><dt>Eliminado</dt><dd>Día ${c.diedDay} · por ${c.killedBy?esc(c.killedBy.name):'nadie en particular'}</dd></div>`}</dl></section>`;
@@ -747,7 +748,7 @@ async function copyProject(){
   catch(e){showExportText(json,'No se pudo copiar solo. Seleccioná el texto y copialo.');}
 }
 function replaceProject(p){
-  P=p;S=null;ui.char=ui.ev=ui.simSel=ui.team=ui.state=null;ui.nameSamples=[];ui.sel.clear();ui.exportText='';ui.dataMsg='';ui.importBuf='';
+  P=p;S=null;ui.char=ui.ev=ui.simSel=ui.team=ui.state=ui.item=null;ui.nameSamples=[];ui.sel.clear();ui.exportText='';ui.dataMsg='';ui.importBuf='';
   saveNow().then(gcBlobs);render();
 }
 
@@ -802,7 +803,7 @@ const selChars=()=>P.chars.filter(c=>ui.sel.has(c.id));
 function pickBulk(kind,on,cat){
   const c=curChar();if(!c)return;
   let skipped=0;
-  pickFilter(kind).filter(i=>cat==null||(i.cat||'')===cat).forEach(i=>{
+  pickFilter(kind).filter(i=>cat==null||(catList(i).length?catList(i).includes(cat):cat==='')).forEach(i=>{
     const idx=c[kind].indexOf(i.id);
     if(on){
       if(idx<0){
@@ -817,7 +818,7 @@ function pickBulk(kind,on,cat){
 function tagAdd(kind){
   const name=$('#new-name').value.trim();if(!name)return;
   const o={id:uid(),name};
-  if(kind==='items'){const v=parseInt($('#new-size').value,10);o.size=isNaN(v)?1:Math.max(0,v);o.cat=$('#new-cat').value.trim();o.icon=$('#new-icon').value.trim();o.img=null;}
+  if(kind==='items'){const v=parseInt($('#new-size').value,10);o.size=isNaN(v)?1:Math.max(0,v);o.cats=[...new Set($('#new-cat').value.split(',').map(x=>x.trim()).filter(Boolean))];o.icon=$('#new-icon').value.trim();o.img=null;o.slots=0;o.mods=[];o.sec=ui.itemTarget.sec;o.fold=ui.itemTarget.fold;}
   else if(kind==='skills'){o.cat=$('#new-cat').value.trim();o.icon=$('#new-icon').value.trim();o.img=null;o.cd={mode:'none',days:3};}
   else if(kind==='scenes'){o.icon=$('#new-icon').value.trim();o.img=null;o.links=[];}
   else if(kind==='emotions'){const v=parseInt($('#new-days').value,10);o.icon=$('#new-icon').value.trim();o.days=isNaN(v)?0:Math.max(0,v);}
@@ -841,7 +842,7 @@ function limitsChanged(){
 const ACT={
   tab(b){
     const k=b.dataset.tab;
-    if(ui.tab===k){ui.char=null;ui.ev=null;ui.team=null;ui.state=null;}
+    if(ui.tab===k){ui.char=null;ui.ev=null;ui.team=null;ui.state=null;ui.item=null;}
     ui.tab=k;render();
   },
   /* personajes */

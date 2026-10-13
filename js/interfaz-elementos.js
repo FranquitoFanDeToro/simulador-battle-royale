@@ -15,7 +15,7 @@
 const VAR_NOUN={item:'un objeto',skill:'una habilidad',state:'un estado',team:'un equipo',scene:'un escenario'};
 const VAR_PLURAL={item:'objetos',skill:'habilidades',state:'estados',team:'equipos',scene:'escenarios'};
 const VAR_LIST={item:'items',skill:'skills',state:'states',scene:'scenes'};
-const catsOf=kind=>VAR_LIST[kind]?[...new Set(P[VAR_LIST[kind]].map(i=>i.cat).filter(Boolean))].sort():[];
+const catsOf=kind=>VAR_LIST[kind]?[...new Set(P[VAR_LIST[kind]].flatMap(catList).filter(Boolean))].sort():[];
 /* Elementos que se pueden elegir a mano: los del proyecto (los equipos, solo los armados de antemano). */
 const varChoices=kind=>kind==='team'?P.teams.map(t=>({id:t.id,label:t.name||'Sin nombre'})):P[VAR_LIST[kind]].map(i=>({id:i.id,label:lbl(i)}));
 

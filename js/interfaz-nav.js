@@ -8,6 +8,7 @@ const NAV={
   char:{list:()=>charsFiltered(),all:()=>P.chars,key:'char',noun:'personaje'},
   team:{list:()=>teamsFiltered(),all:()=>P.teams,key:'team',noun:'equipo'},
   state:{list:()=>statesFiltered(),all:()=>P.states,key:'state',noun:'estado'},
+  item:{list:()=>itemsFiltered(),all:()=>P.items,key:'item',noun:'objeto'},
   ev:{list:()=>eventsFiltered(),all:()=>P.events,key:'ev',noun:'evento'}
 };
 function navHTML(kind){

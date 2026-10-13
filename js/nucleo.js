@@ -117,7 +117,7 @@ const safeUrl=s=>/^(https?:\/\/|data:image\/)/i.test(String(s||''));
 function sampleProject(){
   const R=(role,kind,val,neg,extra)=>Object.assign({t:'r',neg:!!neg,role,kind,val:val||'',op:'>=',num:1,role2:'Y'},extra||{});
   const G=(op,...c)=>({t:'g',op,c});
-  const I={cu:'it_cuchillo',ar:'it_arco',bo:'it_botiquin'};
+  const I={cu:'it_cuchillo',ar:'it_arco',bo:'it_botiquin',mo:'it_mochila'};
   const K={si:'sk_sigilo',pu:'sk_punteria',au:'sk_auxilios'};
   const T={fu:'st_fuerza',ag:'st_agilidad',ing:'st_ingenio'};
   const M={mi:'em_miedo',fu:'em_furia',ca:'em_calma',tr:'em_tristeza'};
@@ -173,9 +173,10 @@ function sampleProject(){
     sceneStart:'sc_claro',
     stats:[{id:T.fu,name:'Fuerza',def:5,min:0,max:10},{id:T.ag,name:'Agilidad',def:5,min:0,max:10},{id:T.ing,name:'Ingenio',def:5,min:0,max:10}],
     items:[
-      {id:I.cu,name:'Cuchillo',size:1,cat:'Armas',icon:'🔪',img:null},
-      {id:I.ar,name:'Arco',size:2,cat:'Armas',icon:'🏹',img:null},
-      {id:I.bo,name:'Botiquín',size:1,cat:'Salud',icon:'🩹',img:null}
+      {id:I.cu,name:'Cuchillo',size:1,cats:['Armas'],icon:'🔪',img:null},
+      {id:I.ar,name:'Arco',size:2,cats:['Armas','A distancia'],icon:'🏹',img:null},
+      {id:I.bo,name:'Botiquín',size:1,cats:['Salud'],icon:'🩹',img:null},
+      {id:I.mo,name:'Mochila',size:1,cats:['Equipo'],icon:'🎒',img:null,slots:4}
     ],
     skills:[
       {id:K.si,name:'Sigilo',cat:'Movimiento',icon:'🥷',img:null},
@@ -383,7 +384,7 @@ function normalize(p){
       steps:arr(ch.steps).filter(x=>x&&typeof x==='object').map(normStep)
     };
   };
-  const o={v:7,stats:[],items:[],skills:[],emotions:[],states:[],scenes:[],sceneStart:'',sections:[],chars:[],teams:[],words:{nouns:[],adjs:[]},teamPresets:[],events:[],fallback:'{X} pasó el día sin novedades.'};
+  const o={v:7,stats:[],items:[],skills:[],emotions:[],states:[],scenes:[],sceneStart:'',sections:[],itemSecs:[],chars:[],teams:[],words:{nouns:[],adjs:[]},teamPresets:[],events:[],fallback:'{X} pasó el día sin novedades.'};
   const lim=v=>(v===null||v===undefined||v===''||!isFinite(parseFloat(v)))?null:parseFloat(v);
   const normImg=m=>(m&&m.id&&['file','url','data'].includes(m.kind)&&(m.kind==='file'||safeUrl(m.src)))?{id:String(m.id),kind:m.kind,src:m.kind==='file'?'':String(m.src),tag:''}:null;
   o.stats=arr(p.stats).filter(i=>i&&i.id).map(i=>{
@@ -392,7 +393,21 @@ function normalize(p){
     let d=num(i.def,5);if(mn!=null&&d<mn)d=mn;if(mx!=null&&d>mx)d=mx;
     return {id:String(i.id),name:String(i.name||''),def:d,min:mn,max:mx};
   });
-  o.items=arr(p.items).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),size:Math.max(0,Math.floor(num(i.size,1))),cat:String(i.cat||''),icon:String(i.icon||'').slice(0,8),img:normImg(i.img)}));
+  /* secciones y carpetas de objetos */
+  const isSeen=new Set(),ifSeen=new Set();
+  o.itemSecs=arr(p.itemSecs).filter(x=>x&&x.id&&!isSeen.has(String(x.id))&&isSeen.add(String(x.id))).map(x=>({
+    id:String(x.id),name:String(x.name||'').slice(0,80),closed:!!x.closed,
+    folders:arr(x.folders).filter(f=>f&&f.id&&!ifSeen.has(String(f.id))&&ifSeen.add(String(f.id))).map(f=>({id:String(f.id),name:String(f.name||'').slice(0,80),closed:!!f.closed}))
+  }));
+  o.items=arr(p.items).filter(i=>i&&i.id).map(i=>{
+    const sec=o.itemSecs.find(x=>x.id===String(i.sec||''));
+    const cl=i.cats!==undefined?arr(i.cats):(i.cat?[i.cat]:[]);
+    return {id:String(i.id),name:String(i.name||''),size:Math.max(0,Math.floor(num(i.size,1))),
+      cats:[...new Set(cl.map(c=>String(c).trim()).filter(Boolean))],icon:String(i.icon||'').slice(0,8),img:normImg(i.img),
+      slots:Math.floor(num(i.slots,0)),
+      mods:arr(i.mods).filter(m=>m&&m.stat).map(m=>({stat:String(m.stat),mode:m.mode==='mult'?'mult':'add',num:num(m.num,m.mode==='mult'?1:0)})),
+      sec:sec?sec.id:'',fold:(sec&&sec.folders.some(f=>f.id===String(i.fold||'')))?String(i.fold):''};
+  });
   o.skills=arr(p.skills).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),cat:String(i.cat||''),icon:String(i.icon||'').slice(0,8),img:normImg(i.img),cd:normCd(i.cd)}));
   o.emotions=arr(p.emotions).filter(i=>i&&i.id).map(i=>({id:String(i.id),name:String(i.name||''),icon:String(i.icon||'').slice(0,8),days:Math.max(0,Math.floor(num(i.days,0)))}));
   o.states=arr(p.states).filter(i=>i&&i.id).map(i=>({
@@ -479,19 +494,26 @@ function normalize(p){
 
 /* ---------- Inventario y stats (sirven para personajes del proyecto y de la simulación) ---------- */
 const sizeOf=id=>{const i=P.items.find(x=>x.id===id);return i?i.size:0;};
+/* Categorías de un objeto o habilidad (los objetos pueden tener varias; lo demás, una). */
+const catList=i=>i?(i.cats||(i.cat?[i.cat]:[])):[];
+/* Objetos que el personaje tiene en el inventario (arreglo o Set) y lo que aportan mientras los tenga. */
+function heldItems(ch){const out=[];ch.items.forEach(id=>{const i=P.items.find(x=>x.id===id);if(i)out.push(i);});return out;}
+/* Espacio total del inventario: el propio más lo que sumen los objetos que lleva (una mochila, por ejemplo). */
+function slotsOf(ch){let n=ch.slots;heldItems(ch).forEach(i=>{n+=i.slots||0;});return Math.max(0,n);}
 function usedSlots(ch){let n=0;ch.items.forEach(id=>{n+=sizeOf(id);});return n;}
-const slotsFree=ch=>ch.slots-usedSlots(ch);
+const slotsFree=ch=>slotsOf(ch)-usedSlots(ch);
 const hasStat=(ch,id)=>Object.prototype.hasOwnProperty.call(ch.stats,id);
 /* Valor efectivo de una stat: la base más lo que suman o multiplican los estados alterados que tenga.
    Una stat que el personaje no tiene vale 0 y ningún estado se la da. */
 function effStat(ch,id){
   const base=ch.stats[id];
-  if(!ch.states||!ch.states.length) return base;
   let add=0,mul=1,hit=false;
-  ch.states.forEach(x=>{
+  const apply=m=>{if(m.stat===id){hit=true;if(m.mode==='mult')mul*=m.num;else add+=m.num;}};
+  (ch.states||[]).forEach(x=>{
     const def=stateDef(typeof x==='string'?x:x.id);
-    if(def) def.mods.forEach(m=>{if(m.stat===id){hit=true;if(m.mode==='mult')mul*=m.num;else add+=m.num;}});
+    if(def) def.mods.forEach(apply);
   });
+  heldItems(ch).forEach(i=>(i.mods||[]).forEach(apply));   // los objetos del inventario también cuentan
   if(!hit) return base;
   const s=statDef(id),lo=s&&s.min!=null?s.min:0,v=(base+add)*mul;
   return Math.min(s&&s.max!=null?s.max:Infinity,Math.max(lo,v));
@@ -584,7 +606,7 @@ function ruleOne(n,ch,as){
     case 'item': return !!n.val&&ch.items.has(n.val);
     case 'space': {const it=P.items.find(i=>i.id===n.val);return !!it&&slotsFree(ch)>=it.size;}
     case 'skill': return !!n.val&&ch.skills.has(n.val);
-    case 'slotsize': return cmp(ch.slots,n.op,n.num);
+    case 'slotsize': return cmp(slotsOf(ch),n.op,n.num);
     case 'scene': return !!n.val&&ch.scene===n.val;
     case 'samescene': {const c2=as[n.role2];return !!c2&&ch.scene===c2.scene;}
     case 'linkedscene': {const c2=as[n.role2];return !!c2&&scenesLinked(ch.scene,c2.scene);}
@@ -723,7 +745,7 @@ function varPool(v,as,sim){
   } else if(v.src==='list') ids=L.filter(i=>v.excl?!v.ids.includes(i.id):v.ids.includes(i.id)).map(i=>i.id);
   else ids=L.map(i=>i.id);
   const has=(c,id)=>v.kind==='item'?c.items.has(id):(v.kind==='skill'?c.skills.has(id):hasState(c,id));
-  if(v.cats&&v.cats.length) ids=ids.filter(id=>{const o=L.find(i=>i.id===id);return !!o&&v.cats.includes(o.cat||'');});
+  if(v.cats&&v.cats.length) ids=ids.filter(id=>{const o=L.find(i=>i.id===id);const cl=catList(o);return !!o&&(cl.length?cl.some(c=>v.cats.includes(c)):v.cats.includes(''));});
   (v.has||[]).forEach(r=>{const c=as[r];ids=ids.filter(id=>!!c&&has(c,id));});
   (v.lacks||[]).forEach(r=>{const c=as[r];if(c)ids=ids.filter(id=>!has(c,id)&&(v.kind!=='item'||slotsFree(c)>=sizeOf(id)));});
   if(v.size&&v.kind==='item') ids=ids.filter(id=>cmp(sizeOf(id),v.size.op,v.size.num));

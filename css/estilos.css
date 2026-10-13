@@ -433,3 +433,16 @@ details.note>summary{cursor:pointer}
 .grid.dz-on{outline:2px dashed var(--accent);outline-offset:4px}
 .chip.warn{background:var(--warn);color:#fff}
 .sgtools{margin:0 0 10px}
+
+/* ---------- Etapa 11: objetos ---------- */
+.fd{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;background:var(--surface)}
+.fd-h{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 8px;background:var(--surface-2);border-radius:8px 8px 0 0}
+.fd-h.sg-hl{outline:3px solid var(--accent);outline-offset:-3px}
+.fd .grid{padding:8px}
+.fd-h .acts{margin-left:auto;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.fd.closed .fd-h{border-radius:8px}
+.sgb>.grid{padding:0}
+.sgb>.fd:last-child{margin-bottom:0}
+.ifx{color:var(--ok);font-weight:600}
+.ccard .chip{margin-right:2px}
+.chips .rc{display:inline-flex;gap:4px;align-items:center}
